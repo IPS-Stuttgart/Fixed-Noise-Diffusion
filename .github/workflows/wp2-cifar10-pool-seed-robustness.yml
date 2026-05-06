@@ -4,10 +4,6 @@ name: WP2 CIFAR-10 pool-seed robustness
 on:
   workflow_dispatch:
     inputs:
-      runner_labels_json:
-        description: "JSON array of self-hosted Linux runner labels"
-        required: true
-        default: '["self-hosted", "Linux"]'
       model_seed:
         description: "Model/training seed to hold fixed while varying pool_seed"
         required: true
@@ -42,7 +38,7 @@ env:
 jobs:
   cifar10-pool-seed-robustness:
     name: cifar10-pool${{ matrix.pool_size }}-poolseed${{ matrix.pool_seed }}-seed${{ inputs.model_seed }}
-    runs-on: ${{ fromJSON(inputs.runner_labels_json) }}
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 360
     strategy:
       fail-fast: false
