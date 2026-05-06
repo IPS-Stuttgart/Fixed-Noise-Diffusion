@@ -24,10 +24,6 @@ on:
         description: "Training epochs"
         required: true
         default: "100"
-      max_parallel:
-        description: "Maximum matrix jobs to run concurrently"
-        required: true
-        default: "2"
       run_group:
         description: "Output group name under runs/"
         required: true
@@ -58,7 +54,7 @@ jobs:
     timeout-minutes: 360
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJSON(inputs.max_parallel) }}
+      max-parallel: 2
       matrix:
         pool_size: ${{ fromJSON(inputs.pool_size_list_json) }}
         pool_seed: ${{ fromJSON(inputs.pool_seed_list_json) }}
