@@ -1,5 +1,6 @@
 name: WP2 CelebA64 validation
 
+#checkov:skip=CKV_GHA_7:Manual research validation workflow intentionally needs operator-supplied runner, seed, data, and evaluation parameters.
 on:
   workflow_dispatch:
     inputs:
@@ -48,6 +49,9 @@ on:
         description: "Real training images for optional FID evaluation"
         required: true
         default: "50000"
+
+permissions:
+  contents: read
 
 env:
   # Keep the runtime opt-in explicit while using Node-24-native action versions.
