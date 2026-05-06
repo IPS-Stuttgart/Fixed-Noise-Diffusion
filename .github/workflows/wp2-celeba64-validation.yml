@@ -45,6 +45,10 @@ on:
         required: true
         default: "50000"
 
+env:
+  # Opt in before GitHub switches JavaScript actions to Node.js 24 by default.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   celeba64-validation:
     name: celeba64-${{ matrix.condition }}-seed${{ matrix.seed }}
@@ -61,6 +65,10 @@ jobs:
       PYTHONNOUSERSITE: "1"
       OUTPUT_ROOT: runs/${{ inputs.run_group }}
       DATA_DIR: ${{ inputs.data_dir }}
+      # Use a persistent local pip cache on the self-hosted runner instead of
+      # actions/setup-python's remote Actions cache. The latter produced
+      # intermittent Azure authentication failures during cache restore.
+      PIP_CACHE_DIR: ${{ inputs.data_dir }}/pip-cache
 
     steps:
       - name: Check out repository
@@ -70,7 +78,22 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip"
+
+      - name: Runner and cache diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "runner.name=${RUNNER_NAME:-unset}"
+          echo "runner.os=${RUNNER_OS:-unset}"
+          echo "runner.arch=${RUNNER_ARCH:-unset}"
+          echo "workspace=${GITHUB_WORKSPACE}"
+          echo "data_dir=${DATA_DIR}"
+          echo "pip_cache_dir=${PIP_CACHE_DIR}"
+          mkdir -p "${DATA_DIR}" "${PIP_CACHE_DIR}"
+          df -h "${GITHUB_WORKSPACE}" "${DATA_DIR}" || true
+          python --version
+          python -m pip --version
+          python -m pip cache dir
 
       - name: Install dependencies
         shell: bash
