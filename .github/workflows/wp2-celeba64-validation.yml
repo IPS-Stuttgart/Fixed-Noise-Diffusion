@@ -22,7 +22,7 @@ on:
       data_dir:
         description: "Persistent CelebA cache on the self-hosted runner"
         required: true
-        default: "/home/florianpfaff/datasets/fixed-noise-diffusion"
+        default: "/home/github-runner/cache/datasets/fixed-noise-diffusion"
       subset_size:
         description: "Training subset size; use none for full CelebA train split"
         required: true
