@@ -7,6 +7,10 @@ on:
         description: "JSON array of self-hosted Linux runner labels"
         required: true
         default: '["self-hosted", "Linux"]'
+      seed_list_json:
+        description: "JSON array of seeds to run"
+        required: true
+        default: "[0]"
       epochs:
         description: "Training epochs; also used as the final checkpoint epoch"
         required: true
@@ -57,7 +61,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        seed: [0]
+        seed: ${{ fromJSON(inputs.seed_list_json) }}
         condition: [gaussian, fixed_pool_1k, fixed_pool_10k, fixed_pool_100k]
 
     env:
