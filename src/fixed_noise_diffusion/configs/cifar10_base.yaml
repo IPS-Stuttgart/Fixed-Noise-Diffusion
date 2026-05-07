@@ -1,3 +1,4 @@
+---
 run_name: cifar10_base
 output_dir: runs
 seed: 0
