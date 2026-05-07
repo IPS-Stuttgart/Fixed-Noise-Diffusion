@@ -15,16 +15,16 @@ from .noise import (
     GaussianNoiseSampler,
     make_noise_sampler,
 )
-from .summarize_sample_quality import (
-    _float_or_nan,
-    _format_float,
-    _sample_mean,
-    _sample_std,
-    condition_kind,
-    write_csv,
-)
+from .summarize_sample_quality import condition_kind, write_csv
 from .sweep import add_common_sweep_eval_args, run_identity, select_run_dirs
-from .utils import resolve_device, seed_everything
+from .utils import (
+    float_or_nan,
+    format_float,
+    resolve_device,
+    sample_mean,
+    sample_std,
+    seed_everything,
+)
 
 
 def prepare_eval_config(
@@ -77,7 +77,7 @@ def _append_record(csv_path: Path, jsonl_path: Path, record: dict[str, Any]) -> 
 
 
 def _loss_or_blank(value: float | None) -> str:
-    return "" if value is None else _format_float(value)
+    return "" if value is None else format_float(value)
 
 
 def evaluate_run_epoch(
@@ -155,13 +155,13 @@ def evaluate_run_epoch(
         "train_pool_seed": config["noise"].get("pool_seed", ""),
         "heldout_pool_seed": heldout_seed,
         "noise_mode": info.mode,
-        "train_noise_loss": _format_float(train_loss),
+        "train_noise_loss": format_float(train_loss),
         "heldout_pool_loss": _loss_or_blank(heldout_loss),
-        "fresh_gaussian_loss": _format_float(gaussian_loss),
+        "fresh_gaussian_loss": format_float(gaussian_loss),
         "heldout_pool_gap": _loss_or_blank(
             None if heldout_loss is None else heldout_loss - train_loss
         ),
-        "fresh_gaussian_gap": _format_float(gaussian_loss - train_loss),
+        "fresh_gaussian_gap": format_float(gaussian_loss - train_loss),
         "gaussian_minus_heldout_gap": _loss_or_blank(
             None if heldout_loss is None else gaussian_loss - heldout_loss
         ),
@@ -197,9 +197,9 @@ def summarize_rows(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
             "fresh_gaussian_gap",
             "gaussian_minus_heldout_gap",
         ):
-            values = [_float_or_nan(row.get(column, "")) for row in group]
-            item[f"{column}_mean"] = _format_float(_sample_mean(values))
-            item[f"{column}_std"] = _format_float(_sample_std(values))
+            values = [float_or_nan(row.get(column, "")) for row in group]
+            item[f"{column}_mean"] = format_float(sample_mean(values))
+            item[f"{column}_std"] = format_float(sample_std(values))
         summary.append(item)
 
     return sorted(
