@@ -9,14 +9,14 @@ on: # yamllint disable-line rule:truthy
     paths:
       - "src/fixed_noise_diffusion/**"
       - "pyproject.toml"
-      - ".github/workflows/cifar10-data-smoke.yml"
+      - ".github/workflows/**"
   pull_request:
     branches:
       - main
     paths:
       - "src/fixed_noise_diffusion/**"
       - "pyproject.toml"
-      - ".github/workflows/cifar10-data-smoke.yml"
+      - ".github/workflows/**"
 
 permissions:
   contents: read
