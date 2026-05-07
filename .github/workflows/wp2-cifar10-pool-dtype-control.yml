@@ -1,0 +1,210 @@
+name: WP2 CIFAR-10 pool dtype control
+
+#checkov:skip=CKV_GHA_7:Manual research workflow intentionally exposes bounded runner, seed, and runtime parameters.
+on:
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: "Training epochs"
+        required: true
+        default: "100"
+      run_group:
+        description: "Output group name under runs/"
+        required: true
+        default: "wp2_cifar10_pool_dtype_control_100ep"
+      data_dir:
+        description: "Persistent CIFAR-10 cache on the self-hosted runner"
+        required: true
+        default: "/home/github-runner/.cache/datasets/fixed-noise-diffusion"
+      eval_subset_size:
+        description: "Validation subset size for denoising diagnostics"
+        required: true
+        default: "2048"
+      cuda_visible_devices:
+        description: "Optional CUDA_VISIBLE_DEVICES value; leave empty to use the runner default"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  cifar10-pool-dtype-control:
+    name: cifar10-pool${{ matrix.pool_size }}-${{ matrix.pool_dtype }}-seed${{ matrix.seed }}
+    runs-on: [self-hosted, Linux]
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        pool_size: [250, 1000, 10000, 100000]
+        pool_dtype: [float16, float32]
+        seed: [0, 1, 2]
+
+    env:
+      PYTHONPATH: src
+      PYTHONNOUSERSITE: "1"
+      OUTPUT_ROOT: runs/${{ inputs.run_group }}
+      DATA_DIR: ${{ inputs.data_dir }}
+      PIP_CACHE_DIR: ${{ inputs.data_dir }}/pip-cache
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Runner and cache diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "runner.name=${RUNNER_NAME:-unset}"
+          echo "runner.os=${RUNNER_OS:-unset}"
+          echo "runner.arch=${RUNNER_ARCH:-unset}"
+          echo "workspace=${GITHUB_WORKSPACE}"
+          echo "data_dir=${DATA_DIR}"
+          mkdir -p "${DATA_DIR}" "${PIP_CACHE_DIR}"
+          df -h "${GITHUB_WORKSPACE}" "${DATA_DIR}" || true
+          python --version
+          python -m pip --version
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+          python -m pip install -e .
+          python - <<'PY'
+          import torch
+
+          print(
+              f"torch={torch.__version__}; cuda={torch.version.cuda}; "
+              f"cuda_available={torch.cuda.is_available()}"
+          )
+          if not torch.cuda.is_available():
+              raise SystemExit("CUDA is required for this self-hosted workflow")
+          print(f"device={torch.cuda.get_device_name(0)}")
+          PY
+
+      - name: Prepare CIFAR-10 dataset cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${DATA_DIR}"
+          (
+            flock 9
+            python - <<'PY'
+          import os
+          from torchvision import datasets
+
+          root = os.environ["DATA_DIR"]
+          for train in (True, False):
+              dataset = datasets.CIFAR10(root=root, train=train, download=True)
+              split = "train" if train else "test"
+              print(f"CIFAR-10 {split} cache ready: {len(dataset)} examples")
+          print(f"CIFAR-10 cache ready at {root}")
+          PY
+          ) 9>"${DATA_DIR}/.cifar10_download.lock"
+
+      - name: Run CIFAR-10 pool dtype condition
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.cuda_visible_devices }}" ]; then
+            export CUDA_VISIBLE_DEVICES="${{ inputs.cuda_visible_devices }}"
+          fi
+
+          POOL_SIZE="${{ matrix.pool_size }}"
+          POOL_DTYPE="${{ matrix.pool_dtype }}"
+          SEED="${{ matrix.seed }}"
+          EPOCHS="${{ inputs.epochs }}"
+          RUN_NAME="wp2_${EPOCHS}ep_cifar10_dtype_${POOL_DTYPE}_pool_${POOL_SIZE}_seed${SEED}"
+          mkdir -p "${OUTPUT_ROOT}"
+
+          python -m fixed_noise_diffusion.train \
+            --config cifar10_base.yaml \
+            --set "run_name=${RUN_NAME}" \
+            --set "output_dir=${OUTPUT_ROOT}" \
+            --set "seed=${SEED}" \
+            --set "data.data_dir=${DATA_DIR}" \
+            --set "data.download=false" \
+            --set "data.eval_subset_size=${{ inputs.eval_subset_size }}" \
+            --set "diffusion.beta_schedule=cosine" \
+            --set "training.epochs=${EPOCHS}" \
+            --set "training.checkpoint_epochs=[1,5,10,25,50,${EPOCHS}]" \
+            --set "training.save_checkpoint=false" \
+            --set "evaluation.enable_metrics=false" \
+            --set "evaluation.sample_count=0" \
+            --set "noise.mode=fixed_pool" \
+            --set "noise.pool_size=${POOL_SIZE}" \
+            --set "noise.pool_seed=4242" \
+            --set "noise.pool_dtype=${POOL_DTYPE}"
+
+          RUN_DIR="${OUTPUT_ROOT}/${RUN_NAME}"
+          COMPACT_DIR="compact_artifacts/${RUN_NAME}"
+          mkdir -p "${COMPACT_DIR}"
+          for file in metrics.csv metrics.jsonl config.yaml run_metadata.json run_summary.json; do
+            if [ -f "${RUN_DIR}/${file}" ]; then
+              cp "${RUN_DIR}/${file}" "${COMPACT_DIR}/${file}"
+            fi
+          done
+
+      - name: Upload compact run artifacts
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: cifar10-pool${{ matrix.pool_size }}-${{ matrix.pool_dtype }}-seed${{ matrix.seed }}-compact
+          path: compact_artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+  summarize-dtype-control:
+    name: Summarize pool dtype control artifacts
+    needs: cifar10-pool-dtype-control
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Download compact artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: cifar10-pool*-compact
+          path: dtype-control-artifacts
+          merge-multiple: true
+
+      - name: Build dtype-control summary
+        run: |
+          python -m fixed_noise_diffusion.summarize_pool_dtype_control \
+            --runs-root dtype-control-artifacts \
+            --output-dir dtype-control-summary \
+            --prefix wp2_cifar10_pool_dtype_control_${{ inputs.epochs }}ep \
+            --epoch ${{ inputs.epochs }}
+
+      - name: Upload dtype-control summary
+        uses: actions/upload-artifact@v7
+        with:
+          name: wp2-cifar10-pool-dtype-control-summary
+          path: dtype-control-summary/
+          if-no-files-found: error
+          retention-days: 30
