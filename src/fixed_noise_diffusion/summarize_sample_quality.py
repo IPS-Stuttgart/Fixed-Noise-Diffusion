@@ -6,10 +6,10 @@ import math
 import re
 from collections import defaultdict
 from pathlib import Path
-from statistics import mean, stdev
-from typing import Any
 
 import matplotlib.pyplot as plt
+
+from .utils import float_or_nan, format_float, sample_mean, sample_std, write_csv_rows
 
 POOL_RE = re.compile(r"(?:fixed_pool|fixed_pool_whitened)_(?P<size>\d+)(?P<unit>k?)$")
 
@@ -32,32 +32,6 @@ def condition_pool_size(condition: str) -> int | None:
     if match.group("unit") == "k":
         size *= 1000
     return size
-
-
-def _float_or_nan(value: Any) -> float:
-    if value is None or value == "":
-        return math.nan
-    return float(value)
-
-
-def _format_float(value: float | None) -> str:
-    if value is None or math.isnan(value):
-        return ""
-    return f"{value:.12g}"
-
-
-def _sample_std(values: list[float]) -> float:
-    clean = [value for value in values if not math.isnan(value)]
-    if len(clean) < 2:
-        return math.nan
-    return stdev(clean)
-
-
-def _sample_mean(values: list[float]) -> float:
-    clean = [value for value in values if not math.isnan(value)]
-    if not clean:
-        return math.nan
-    return mean(clean)
 
 
 def find_quality_csvs(paths: list[Path]) -> list[Path]:
@@ -117,9 +91,9 @@ def summarize_quality(rows: list[dict[str, str]]) -> list[dict[str, str]]:
 
     summary: list[dict[str, str]] = []
     for (kind, condition, pool_size, epoch), group in grouped.items():
-        fids = [_float_or_nan(row.get("fid")) for row in group]
-        kids = [_float_or_nan(row.get("kid_mean")) for row in group]
-        seconds = [_float_or_nan(row.get("seconds")) for row in group]
+        fids = [float_or_nan(row.get("fid")) for row in group]
+        kids = [float_or_nan(row.get("kid_mean")) for row in group]
+        seconds = [float_or_nan(row.get("seconds")) for row in group]
         summary.append(
             {
                 "kind": kind,
@@ -127,11 +101,11 @@ def summarize_quality(rows: list[dict[str, str]]) -> list[dict[str, str]]:
                 "pool_size": pool_size,
                 "epoch": epoch,
                 "n": str(len(group)),
-                "fid_mean": _format_float(_sample_mean(fids)),
-                "fid_std": _format_float(_sample_std(fids)),
-                "kid_mean_mean": _format_float(_sample_mean(kids)),
-                "kid_mean_std": _format_float(_sample_std(kids)),
-                "seconds_mean": _format_float(_sample_mean(seconds)),
+                "fid_mean": format_float(sample_mean(fids)),
+                "fid_std": format_float(sample_std(fids)),
+                "kid_mean_mean": format_float(sample_mean(kids)),
+                "kid_mean_std": format_float(sample_std(kids)),
+                "seconds_mean": format_float(sample_mean(seconds)),
             }
         )
     return sorted(
@@ -181,21 +155,7 @@ def merge_gap_summary(
 
 
 def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
-    if not rows:
-        raise ValueError(f"No rows to write to {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(rows[0])
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-def _as_float(row: dict[str, str], key: str) -> float:
-    value = row.get(key, "")
-    if value == "":
-        return math.nan
-    return float(value)
+    write_csv_rows(path, rows)
 
 
 def plot_fid_by_pool(summary: list[dict[str, str]], output: Path) -> None:
@@ -218,9 +178,9 @@ def plot_fid_by_pool(summary: list[dict[str, str]], output: Path) -> None:
     fig, axis = plt.subplots(figsize=(7, 4), constrained_layout=True)
     axis.errorbar(
         [int(row["pool_size"]) for row in fixed],
-        [_as_float(row, "fid_mean") for row in fixed],
+        [float_or_nan(row.get("fid_mean", "")) for row in fixed],
         yerr=[
-            0.0 if math.isnan(_as_float(row, "fid_std")) else _as_float(row, "fid_std")
+            0.0 if math.isnan(float_or_nan(row.get("fid_std", ""))) else float_or_nan(row.get("fid_std", ""))
             for row in fixed
         ],
         marker="o",
@@ -228,8 +188,8 @@ def plot_fid_by_pool(summary: list[dict[str, str]], output: Path) -> None:
         label="fixed pool",
     )
     if gaussian:
-        fid_mean = _as_float(gaussian[0], "fid_mean")
-        fid_std = _as_float(gaussian[0], "fid_std")
+        fid_mean = float_or_nan(gaussian[0].get("fid_mean", ""))
+        fid_std = float_or_nan(gaussian[0].get("fid_std", ""))
         axis.axhline(
             fid_mean,
             color="black",
@@ -276,8 +236,8 @@ def plot_fid_vs_gap(summary: list[dict[str, str]], output: Path) -> None:
         if not group:
             continue
         axis.scatter(
-            [_as_float(row, "denoising_gap_mean") for row in group],
-            [_as_float(row, "fid_mean") for row in group],
+            [float_or_nan(row.get("denoising_gap_mean", "")) for row in group],
+            [float_or_nan(row.get("fid_mean", "")) for row in group],
             marker=markers[kind],
             label=kind.replace("_", " "),
             s=46,
@@ -293,7 +253,10 @@ def plot_fid_vs_gap(summary: list[dict[str, str]], output: Path) -> None:
             )
             axis.annotate(
                 label,
-                (_as_float(row, "denoising_gap_mean"), _as_float(row, "fid_mean")),
+                (
+                    float_or_nan(row.get("denoising_gap_mean", "")),
+                    float_or_nan(row.get("fid_mean", "")),
+                ),
                 xytext=(4, 3),
                 textcoords="offset points",
                 fontsize=7,
