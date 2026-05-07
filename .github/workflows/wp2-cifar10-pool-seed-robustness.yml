@@ -1,7 +1,8 @@
+---
 name: WP2 CIFAR-10 pool-seed robustness
 
-#checkov:skip=CKV_GHA_7:Manual research workflow intentionally exposes bounded runner, seed, and runtime parameters.
-on:
+# checkov:skip=CKV_GHA_7: Manual research workflow intentionally exposes bounded runner, seed, and runtime parameters.
+'on':
   workflow_dispatch:
     inputs:
       model_seed:
