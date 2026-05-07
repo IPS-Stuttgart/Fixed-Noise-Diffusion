@@ -1,6 +1,7 @@
+---
 name: WP2 STL-10 validation
 
-on:
+'on':
   # checkov:skip=CKV_GHA_7: Manual self-hosted experiment workflow intentionally exposes bounded runtime inputs.
   workflow_dispatch:
     inputs:
