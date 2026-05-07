@@ -10,18 +10,65 @@ validation away from the Tiny Images lineage.
 
 ## Environment
 
-Use Python 3.12. On this machine, PyTorch with CUDA is already available for
-`py -3.12`. For a fresh environment:
+Use Python 3.12 for paper reproduction. The package metadata also allows Python
+3.13, but the paper-facing commands below assume a Python 3.12 virtual
+environment because this is the most exercised path for the current experiment
+scripts and workflows.
+
+PyTorch is intentionally installed separately from the package dependencies
+because the correct wheel depends on the target machine's CUDA or CPU setup.
+Install PyTorch and torchvision first, then install this repository in editable
+mode.
+
+Linux/macOS:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+
+# CUDA 12.1 example. Replace this with the PyTorch command appropriate for your
+# CUDA/CPU setup if needed.
+python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+python -m pip install -e '.[test]'
+```
+
+Windows PowerShell:
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python -m pip install --upgrade pip
 .\.venv\Scripts\python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-.\.venv\Scripts\python -m pip install -e .
+.\.venv\Scripts\python -m pip install -e '.[test]'
 ```
 
-If you use the existing Python 3.12 installation without installing the package,
-set `PYTHONPATH=src` before running modules.
+For FID/KID sample-quality evaluation, install the optional metrics dependencies:
+
+```bash
+python -m pip install -e '.[metrics,test]'
+```
+
+or on Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python -m pip install -e '.[metrics,test]'
+```
+
+Check the installed environment:
+
+```bash
+python -c "import platform, sys, torch, torchvision; print('python=', sys.version); print('platform=', platform.platform()); print('torch=', torch.__version__); print('torchvision=', torchvision.__version__); print('cuda_available=', torch.cuda.is_available()); print('cuda=', torch.version.cuda)"
+```
+
+If you run modules without installing the package, set `PYTHONPATH=src` before
+running commands.
+
+Every training run writes `run_metadata.json`, including the command, Git commit,
+configuration hash, Python version, platform, Torch version, CUDA/cuDNN metadata,
+device name, seed, data configuration, and noise-pool settings. Keep these
+metadata files together with the curated CSV summaries when archiving paper
+artifacts. More detailed setup and archival notes are in `docs/environment.md`.
 
 ## Smoke Test
 
