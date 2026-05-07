@@ -9,7 +9,13 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from .utils import float_or_nan, format_float, sample_mean, sample_std, write_csv_rows
+from .utils import (
+    float_or_nan,
+    format_float,
+    sample_mean,
+    sample_std,
+    write_csv_rows,
+)
 
 POOL_RE = re.compile(r"(?:fixed_pool|fixed_pool_whitened)_(?P<size>\d+)(?P<unit>k?)$")
 
@@ -158,6 +164,15 @@ def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
     write_csv_rows(path, rows)
 
 
+def _row_value(row: dict[str, str], key: str) -> float:
+    return float_or_nan(row.get(key, ""))
+
+
+def _std_or_zero(row: dict[str, str]) -> float:
+    fid_std = _row_value(row, "fid_std")
+    return 0.0 if math.isnan(fid_std) else fid_std
+
+
 def plot_fid_by_pool(summary: list[dict[str, str]], output: Path) -> None:
     fixed = [
         row
@@ -178,18 +193,15 @@ def plot_fid_by_pool(summary: list[dict[str, str]], output: Path) -> None:
     fig, axis = plt.subplots(figsize=(7, 4), constrained_layout=True)
     axis.errorbar(
         [int(row["pool_size"]) for row in fixed],
-        [float_or_nan(row.get("fid_mean", "")) for row in fixed],
-        yerr=[
-            0.0 if math.isnan(float_or_nan(row.get("fid_std", ""))) else float_or_nan(row.get("fid_std", ""))
-            for row in fixed
-        ],
+        [_row_value(row, "fid_mean") for row in fixed],
+        yerr=[_std_or_zero(row) for row in fixed],
         marker="o",
         capsize=3,
         label="fixed pool",
     )
     if gaussian:
-        fid_mean = float_or_nan(gaussian[0].get("fid_mean", ""))
-        fid_std = float_or_nan(gaussian[0].get("fid_std", ""))
+        fid_mean = _row_value(gaussian[0], "fid_mean")
+        fid_std = _row_value(gaussian[0], "fid_std")
         axis.axhline(
             fid_mean,
             color="black",
@@ -236,8 +248,8 @@ def plot_fid_vs_gap(summary: list[dict[str, str]], output: Path) -> None:
         if not group:
             continue
         axis.scatter(
-            [float_or_nan(row.get("denoising_gap_mean", "")) for row in group],
-            [float_or_nan(row.get("fid_mean", "")) for row in group],
+            [_row_value(row, "denoising_gap_mean") for row in group],
+            [_row_value(row, "fid_mean") for row in group],
             marker=markers[kind],
             label=kind.replace("_", " "),
             s=46,
@@ -254,8 +266,8 @@ def plot_fid_vs_gap(summary: list[dict[str, str]], output: Path) -> None:
             axis.annotate(
                 label,
                 (
-                    float_or_nan(row.get("denoising_gap_mean", "")),
-                    float_or_nan(row.get("fid_mean", "")),
+                    _row_value(row, "denoising_gap_mean"),
+                    _row_value(row, "fid_mean"),
                 ),
                 xytext=(4, 3),
                 textcoords="offset points",
