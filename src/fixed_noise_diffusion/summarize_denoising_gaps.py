@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import argparse
 import csv
-import math
 from collections import defaultdict
 from pathlib import Path
-from statistics import mean, stdev
 from typing import Any
 
 import yaml
 
 from .sweep import select_run_dirs
+from .utils import format_float, sample_mean, sample_sem, sample_std, write_csv_rows
 
 
 SUMMARY_COLUMNS = [
@@ -43,33 +42,6 @@ COMBINED_COLUMNS = [
     "denoising_gap",
     "source_run_dir",
 ]
-
-
-def _format_float(value: float | None) -> str:
-    if value is None or math.isnan(value):
-        return ""
-    return f"{value:.16g}"
-
-
-def _sample_std(values: list[float]) -> float:
-    clean = [value for value in values if not math.isnan(value)]
-    if len(clean) < 2:
-        return math.nan
-    return stdev(clean)
-
-
-def _sample_mean(values: list[float]) -> float:
-    clean = [value for value in values if not math.isnan(value)]
-    if not clean:
-        return math.nan
-    return mean(clean)
-
-
-def _sample_sem(values: list[float]) -> float:
-    clean = [value for value in values if not math.isnan(value)]
-    if len(clean) < 2:
-        return math.nan
-    return stdev(clean) / math.sqrt(len(clean))
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -141,6 +113,26 @@ def _run_seed(config: dict[str, Any], run_dir: Path) -> str:
     return ""
 
 
+def _pool_sort_value(row: dict[str, str]) -> int:
+    return int(row["pool_size"]) if row["pool_size"] else 10**18
+
+
+def _combined_sort_key(item: dict[str, str]) -> tuple[str, str, str, int, str, int, int]:
+    return (
+        item["dataset"],
+        item["experiment"],
+        item["family"],
+        _pool_sort_value(item),
+        item["condition"],
+        int(item["epoch"]),
+        int(item["seed"] or -1),
+    )
+
+
+def _summary_sort_key(item: dict[str, str]) -> tuple[str, str, str, int, str, int]:
+    return _combined_sort_key(item)[:-1]
+
+
 def collect_rows(run_dirs: list[Path], epochs: set[int] | None) -> list[dict[str, str]]:
     combined: list[dict[str, str]] = []
     for run_dir in run_dirs:
@@ -175,18 +167,7 @@ def collect_rows(run_dirs: list[Path], epochs: set[int] | None) -> list[dict[str
                     "source_run_dir": str(run_dir),
                 }
             )
-    return sorted(
-        combined,
-        key=lambda item: (
-            item["dataset"],
-            item["experiment"],
-            item["family"],
-            int(item["pool_size"]) if item["pool_size"] else 10**18,
-            item["condition"],
-            int(item["epoch"]),
-            int(item["seed"] or -1),
-        ),
-    )
+    return sorted(combined, key=_combined_sort_key)
 
 
 def summarize_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -206,7 +187,11 @@ def summarize_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
 
     summary: list[dict[str, str]] = []
     for key, group in grouped.items():
-        gaps = [float(row["denoising_gap"]) for row in group if row.get("denoising_gap") not in (None, "")]
+        gaps = [
+            float(row["denoising_gap"])
+            for row in group
+            if row.get("denoising_gap") not in (None, "")
+        ]
         dataset, experiment, family, noise_mode, condition, pool_size, epoch = key
         summary.append(
             {
@@ -218,33 +203,17 @@ def summarize_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
                 "pool_size": pool_size,
                 "epoch": epoch,
                 "n": str(len(gaps)),
-                "denoising_gap_mean": _format_float(_sample_mean(gaps)),
-                "denoising_gap_std": _format_float(_sample_std(gaps)),
-                "denoising_gap_sem": _format_float(_sample_sem(gaps)),
+                "denoising_gap_mean": format_float(sample_mean(gaps), precision=16),
+                "denoising_gap_std": format_float(sample_std(gaps), precision=16),
+                "denoising_gap_sem": format_float(sample_sem(gaps), precision=16),
             }
         )
 
-    return sorted(
-        summary,
-        key=lambda item: (
-            item["dataset"],
-            item["experiment"],
-            item["family"],
-            int(item["pool_size"]) if item["pool_size"] else 10**18,
-            item["condition"],
-            int(item["epoch"]),
-        ),
-    )
+    return sorted(summary, key=_summary_sort_key)
 
 
 def write_csv(path: Path, rows: list[dict[str, str]], fieldnames: list[str]) -> None:
-    if not rows:
-        raise ValueError(f"No rows to write to {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+    write_csv_rows(path, rows, fieldnames)
 
 
 def parse_epochs(raw: str | None) -> set[int] | None:
