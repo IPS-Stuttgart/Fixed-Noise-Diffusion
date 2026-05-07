@@ -3,12 +3,10 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import math
 import time
 from collections import defaultdict
 from copy import deepcopy
 from pathlib import Path
-from statistics import mean, stdev
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -23,7 +21,7 @@ from .noise import GaussianNoiseSampler, make_noise_sampler
 from .plotting import save_figure
 from .summarize_sample_quality import condition_kind, condition_pool_size
 from .sweep import add_common_sweep_eval_args, run_identity, select_run_dirs
-from .utils import resolve_device, seed_everything
+from .utils import float_or_nan, format_float, sample_mean, sample_std, resolve_device, seed_everything, write_csv_rows
 
 
 def _prepare_config(
@@ -173,26 +171,6 @@ def _append_records(
             handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
-def _sample_mean(values: list[float]) -> float:
-    clean = [value for value in values if not math.isnan(value)]
-    return mean(clean) if clean else math.nan
-
-
-def _sample_std(values: list[float]) -> float:
-    clean = [value for value in values if not math.isnan(value)]
-    return stdev(clean) if len(clean) >= 2 else math.nan
-
-
-def _format_float(value: float) -> str:
-    return "" if math.isnan(value) else f"{value:.12g}"
-
-
-def _float_or_nan(value: Any) -> float:
-    if value is None or value == "":
-        return math.nan
-    return float(value)
-
-
 def summarize_timestep_rows(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
     grouped: dict[tuple[str, str, str, str, str], list[dict[str, Any]]]
     grouped = defaultdict(list)
@@ -209,9 +187,9 @@ def summarize_timestep_rows(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
 
     summary: list[dict[str, str]] = []
     for (kind, condition, pool_size, epoch, timestep), group in grouped.items():
-        train_losses = [_float_or_nan(row["train_noise_loss"]) for row in group]
-        gaussian_losses = [_float_or_nan(row["gaussian_noise_loss"]) for row in group]
-        gaps = [_float_or_nan(row["timestep_gap"]) for row in group]
+        train_losses = [float_or_nan(row["train_noise_loss"]) for row in group]
+        gaussian_losses = [float_or_nan(row["gaussian_noise_loss"]) for row in group]
+        gaps = [float_or_nan(row["timestep_gap"]) for row in group]
         summary.append(
             {
                 "kind": kind,
@@ -220,14 +198,12 @@ def summarize_timestep_rows(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
                 "epoch": epoch,
                 "timestep": timestep,
                 "n": str(len(group)),
-                "train_noise_loss_mean": _format_float(_sample_mean(train_losses)),
-                "train_noise_loss_std": _format_float(_sample_std(train_losses)),
-                "gaussian_noise_loss_mean": _format_float(
-                    _sample_mean(gaussian_losses)
-                ),
-                "gaussian_noise_loss_std": _format_float(_sample_std(gaussian_losses)),
-                "timestep_gap_mean": _format_float(_sample_mean(gaps)),
-                "timestep_gap_std": _format_float(_sample_std(gaps)),
+                "train_noise_loss_mean": format_float(sample_mean(train_losses)),
+                "train_noise_loss_std": format_float(sample_std(train_losses)),
+                "gaussian_noise_loss_mean": format_float(sample_mean(gaussian_losses)),
+                "gaussian_noise_loss_std": format_float(sample_std(gaussian_losses)),
+                "timestep_gap_mean": format_float(sample_mean(gaps)),
+                "timestep_gap_std": format_float(sample_std(gaps)),
             }
         )
     return sorted(
@@ -242,14 +218,13 @@ def summarize_timestep_rows(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
     )
 
 
-def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    if not rows:
-        raise ValueError(f"No rows to write to {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
+def _condition_plot_key(item: tuple[str, list[dict[str, str]]]) -> tuple[str, int, str]:
+    condition = item[0]
+    return condition_kind(condition), condition_pool_size(condition) or 10**18, condition
+
+
+def _plot_label(condition: str) -> str:
+    return condition.replace("strong96_", "")
 
 
 def plot_timestep_gaps(summary: list[dict[str, str]], output: Path) -> None:
@@ -262,21 +237,13 @@ def plot_timestep_gaps(summary: list[dict[str, str]], output: Path) -> None:
         grouped[row["condition"]].append(row)
 
     fig, axis = plt.subplots(figsize=(7, 4), constrained_layout=True)
-    for condition, group in sorted(
-        grouped.items(),
-        key=lambda item: (
-            condition_kind(item[0]),
-            condition_pool_size(item[0]) or 10**18,
-            item[0],
-        ),
-    ):
+    for condition, group in sorted(grouped.items(), key=_condition_plot_key):
         group = sorted(group, key=lambda row: int(row["timestep"]))
-        label = condition.replace("strong96_", "")
         axis.plot(
             [int(row["timestep"]) for row in group],
-            [_float_or_nan(row["timestep_gap_mean"]) for row in group],
+            [float_or_nan(row["timestep_gap_mean"]) for row in group],
             marker="o",
-            label=label,
+            label=_plot_label(condition),
         )
     axis.axhline(0, color="black", linewidth=0.8)
     axis.set_xlabel("Diffusion timestep")
@@ -309,7 +276,7 @@ def main() -> None:
         print(json.dumps({"run_name": run_dir.name, "rows": len(rows)}), flush=True)
 
     summary = summarize_timestep_rows(all_rows)
-    _write_csv(output_dir / "timestep_diagnostics_summary.csv", summary)
+    write_csv_rows(output_dir / "timestep_diagnostics_summary.csv", summary)
     plot_timestep_gaps(summary, output_dir / "timestep_gap_by_timestep.png")
 
 
