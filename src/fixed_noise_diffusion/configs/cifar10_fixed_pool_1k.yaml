@@ -1,3 +1,4 @@
+---
 inherits: cifar10_base.yaml
 run_name: cifar10_fixed_pool_1k_seed0
 
