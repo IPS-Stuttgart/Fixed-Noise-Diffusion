@@ -9,12 +9,11 @@ import matplotlib.pyplot as plt
 
 from .plotting import save_figure
 from .summarize_sample_quality import (
-    _float_or_nan,
-    _format_float,
     condition_kind,
     condition_pool_size,
     write_csv,
 )
+from .utils import float_or_nan, format_float
 
 METRIC_COLUMNS = [
     "fid_mean",
@@ -85,9 +84,9 @@ def normalize_summary_row(
         value = row.get(column, "")
         if column == "low_mid_mean_timestep_gap" and value == "":
             value = row.get("mean_timestep_gap", "")
-        normalized[column] = _format_float(_float_or_nan(value))
+        normalized[column] = format_float(float_or_nan(value))
     for column in ("fid_std", "denoising_gap_std"):
-        normalized[column] = _format_float(_float_or_nan(row.get(column, "")))
+        normalized[column] = format_float(float_or_nan(row.get(column, "")))
     return normalized
 
 
@@ -112,7 +111,7 @@ def read_phase_rows(input_specs: list[str]) -> list[dict[str, str]]:
 
 
 def _metric_value(row: dict[str, str], column: str) -> float:
-    return _float_or_nan(row.get(column, ""))
+    return float_or_nan(row.get(column, ""))
 
 
 def _metric_std(row: dict[str, str], column: str) -> float:
@@ -120,7 +119,7 @@ def _metric_std(row: dict[str, str], column: str) -> float:
         "fid_mean": "fid_std",
         "denoising_gap_mean": "denoising_gap_std",
     }.get(column, "")
-    return _float_or_nan(row.get(std_column, "")) if std_column else math.nan
+    return float_or_nan(row.get(std_column, "")) if std_column else math.nan
 
 
 def _pool_value(row: dict[str, str]) -> int | None:
