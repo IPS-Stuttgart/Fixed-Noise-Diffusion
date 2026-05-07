@@ -1,4 +1,9 @@
+from types import SimpleNamespace
+
+import pytest
 import torch
+
+import fixed_noise_diffusion.train as train_module
 from fixed_noise_diffusion.noise import FixedPoolNoiseSampler, GaussianNoiseSampler
 from fixed_noise_diffusion.train import (
     make_evaluation_samplers,
@@ -131,6 +136,90 @@ def test_heldout_pool_eval_sampler_uses_distinct_pool_seed():
     assert heldout_sampler.pool_seed == 47
     assert heldout_sampler.pool.data_ptr() != train_sampler.pool.data_ptr()
     assert not torch.equal(heldout_sampler.pool, train_sampler.pool)
+
+
+def test_checkpoint_denoising_evaluation_pairs_timestep_seed(monkeypatch, tmp_path):
+    calls = []
+    losses = [1.0, 1.5, 1.2]
+
+    def fake_denoising_loss(
+        model,
+        diffusion,
+        loader,
+        sampler,
+        device,
+        batches,
+        seed,
+    ):
+        calls.append(
+            {
+                "mode": sampler.info.mode,
+                "pool_seed": getattr(sampler, "pool_seed", None),
+                "seed": seed,
+            }
+        )
+        return losses[len(calls) - 1]
+
+    monkeypatch.setattr(train_module, "denoising_loss", fake_denoising_loss)
+    monkeypatch.setattr(
+        train_module,
+        "sample_grid",
+        lambda *args, **kwargs: torch.empty(0),
+    )
+
+    config = {
+        "seed": 3,
+        "evaluation": {
+            "denoising_batches": 16,
+            "enable_metrics": False,
+        },
+    }
+    train_sampler = FixedPoolNoiseSampler(
+        image_shape=(1, 1, 1),
+        device=torch.device("cpu"),
+        pool_size=8,
+        pool_seed=30,
+        index_seed=40,
+        dtype="float32",
+        chunk_size=4,
+        whiten=False,
+    )
+    heldout_sampler = FixedPoolNoiseSampler(
+        image_shape=(1, 1, 1),
+        device=torch.device("cpu"),
+        pool_size=8,
+        pool_seed=31,
+        index_seed=41,
+        dtype="float32",
+        chunk_size=4,
+        whiten=False,
+    )
+
+    record = train_module.evaluate_checkpoint(
+        model=torch.nn.Identity(),
+        diffusion=object(),
+        loaders=SimpleNamespace(val=object()),
+        train_noise_sampler=train_sampler,
+        heldout_noise_sampler=heldout_sampler,
+        config=config,
+        device=torch.device("cpu"),
+        run_dir=tmp_path,
+        logger=SimpleNamespace(log=lambda record: None),
+        epoch=7,
+        step=123,
+        timer=SimpleNamespace(elapsed=lambda: 0.0),
+    )
+
+    expected_seed = 3 + 30_000 + 7
+    assert calls == [
+        {"mode": "fixed_pool", "pool_seed": 30, "seed": expected_seed},
+        {"mode": "gaussian", "pool_seed": None, "seed": expected_seed},
+        {"mode": "fixed_pool", "pool_seed": 31, "seed": expected_seed},
+    ]
+    assert record["denoising_eval_timestep_seed"] == expected_seed
+    assert record["denoising_gap"] == pytest.approx(0.5)
+    assert record["heldout_pool_gap"] == pytest.approx(0.2)
+    assert record["gaussian_minus_heldout_gap"] == pytest.approx(0.3)
 
 
 def test_heldout_pool_eval_sampler_skips_gaussian_noise():
