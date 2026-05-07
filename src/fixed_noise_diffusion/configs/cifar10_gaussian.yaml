@@ -1,3 +1,4 @@
+---
 inherits: cifar10_base.yaml
 run_name: cifar10_gaussian_seed0
 
