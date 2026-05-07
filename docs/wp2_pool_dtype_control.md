@@ -19,7 +19,11 @@ The manual workflow `.github/workflows/wp2-cifar10-pool-dtype-control.yml` runs:
 - checkpoint evaluation epochs: `1,5,10,25,50,100`,
 - sample generation and FID/KID disabled for compact diagnostic artifacts.
 
-The acceptance criterion is qualitative rather than bitwise equality: the `float32` runs should preserve the same support-size hierarchy as the default `float16` runs. In particular, small pools should retain large positive denoising gaps, the 10k pool should retain at most a smaller residual gap, and the 100k pool should remain near zero.
+The acceptance criterion is qualitative rather than bitwise equality: the `float32`
+runs should preserve the same support-size hierarchy as the default `float16` runs.
+In particular, small pools should retain large positive denoising gaps, the 10k pool
+should retain at most a smaller residual gap, and the 100k pool should remain near
+zero.
 
 ## Summarizing artifacts
 
@@ -39,4 +43,7 @@ This writes:
 - `wp2_cifar10_pool_dtype_control_100ep_gap_summary.csv`, grouped by dataset, pool size, epoch, and pool dtype,
 - `wp2_cifar10_pool_dtype_control_100ep.png`, a log-scale pool-size plot comparing `float16` and `float32` gaps.
 
-The summary CSV includes `float32_minus_float16_gap_mean` for each matched pool-size/epoch pair. This value should be interpreted relative to the much larger between-pool-size effect, not as a requirement that both storage formats match exactly.
+The summary CSV includes `float32_minus_float16_gap_mean` for each matched
+pool-size/epoch pair. This value should be interpreted relative to the much larger
+between-pool-size effect, not as a requirement that both storage formats match
+exactly.
