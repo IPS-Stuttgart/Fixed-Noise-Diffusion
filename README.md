@@ -33,38 +33,121 @@ py -3.12 -m fixed_noise_diffusion.train --config smoke.yaml
 The smoke run uses synthetic images, one train step, one denoising validation
 pass, and one sample grid.
 
-## WP2 First CIFAR-10 Sweep
+## Paper CIFAR-10 Evidence Stack
 
-Run the Gaussian baseline and fixed-pool configs:
+The paper-facing CIFAR-10 evidence stack is a 100-epoch `base64` DDPM sweep with
+a cosine noise schedule. It includes the Gaussian baseline, the fixed-pool ladder
+
+```text
+M = 250, 500, 1k, 2k, 5k, 10k, 20k, 50k, 100k
+```
+
+and the same ladder with whitened fixed pools. Each condition is run with model
+seeds `0,1,2`. This is intentionally heavier than the quick examples below: the
+scaling/whitening sweep is 57 training jobs.
+
+PowerShell, matching the Windows examples elsewhere in this README:
 
 ```powershell
 $env:PYTHONPATH = "src"
-py -3.12 -m fixed_noise_diffusion.train --config cifar10_gaussian.yaml
-py -3.12 -m fixed_noise_diffusion.train --config cifar10_fixed_pool_1k.yaml
-py -3.12 -m fixed_noise_diffusion.train --config cifar10_fixed_pool_10k.yaml
-py -3.12 -m fixed_noise_diffusion.train --config cifar10_fixed_pool_100k.yaml
+.\src\fixed_noise_diffusion\scripts\run_wp2_cifar10_evidence_stack.ps1 `
+  -OutputRoot runs/wp2_cifar10_pool_scaling_100ep `
+  -DataDir data `
+  -DownloadData
 ```
 
-The same sweep commands are available in:
+Linux/macOS shell:
+
+```bash
+export PYTHONPATH=src
+PYTHON=python \
+OUTPUT_ROOT=runs/wp2_cifar10_pool_scaling_100ep \
+DATA_DIR=data \
+DOWNLOAD_DATA=true \
+bash src/fixed_noise_diffusion/scripts/run_wp2_cifar10_evidence_stack.sh
+```
+
+By default the scripts do not save model checkpoints because the denoising-gap
+evidence stack only needs compact run artifacts. Set `-SaveCheckpoints` in
+PowerShell or `SAVE_CHECKPOINTS=true` in Bash if you also want later sample-quality
+or timestep-local evaluations from saved checkpoints.
+
+Each run writes the reproducibility artifacts needed to audit the paper rows:
+
+- `metrics.csv` and `metrics.jsonl`, including `train_den_loss`,
+  `gaussian_den_loss`, and `denoising_gap` eval rows,
+- `config.yaml`,
+- `run_metadata.json`,
+- `run_summary.json`.
+
+Summarize the CIFAR-10 scaling/whitening sweep into the same column schema used
+by the paper curation step:
 
 ```powershell
-.\src\fixed_noise_diffusion\scripts\run_wp2_sweep.ps1
+$env:PYTHONPATH = "src"
+py -3.12 -m fixed_noise_diffusion.summarize_denoising_gaps `
+  --sweep-dir runs/wp2_cifar10_pool_scaling_100ep `
+  --output runs/wp2_cifar10_pool_scaling_100ep_gap_summary.csv
 ```
 
-Each run writes:
+or, from a POSIX shell:
 
-- `metrics.jsonl`: all train/eval events
-- `metrics.csv`: compact spreadsheet-friendly train/eval rows
-- `run_metadata.json`: config hash, Git, Python, Torch, device, seed, and noise info
-- `run_summary.json`: final step, final diagnostic values, and artifact paths
-- `samples/`: checkpoint sample grids
-- `checkpoints/`: model checkpoints and run config
+```bash
+PYTHONPATH=src python -m fixed_noise_diffusion.summarize_denoising_gaps \
+  --sweep-dir runs/wp2_cifar10_pool_scaling_100ep \
+  --output runs/wp2_cifar10_pool_scaling_100ep_gap_summary.csv
+```
+
+The paper table reports selected rows from this full sweep; the full CSV contains
+all checkpoint epochs `1,5,10,25,50,100` and all pool sizes above.
+
+For a quick local sanity check that does not reproduce the paper table, run only a
+single seed and a few representative conditions:
+
+```powershell
+$env:PYTHONPATH = "src"
+py -3.12 -m fixed_noise_diffusion.train --config cifar10_base.yaml `
+  --set run_name=wp2_100ep_cifar10_gaussian_seed0 `
+  --set output_dir=runs/wp2_cifar10_quick `
+  --set seed=0 `
+  --set diffusion.beta_schedule=cosine `
+  --set training.epochs=100 `
+  --set training.checkpoint_epochs=[1,5,10,25,50,100] `
+  --set training.save_checkpoint=false `
+  --set noise.mode=gaussian `
+  --set noise.pool_size=null
+
+py -3.12 -m fixed_noise_diffusion.train --config cifar10_base.yaml `
+  --set run_name=wp2_100ep_cifar10_fixed_pool_1k_seed0 `
+  --set output_dir=runs/wp2_cifar10_quick `
+  --set seed=0 `
+  --set diffusion.beta_schedule=cosine `
+  --set training.epochs=100 `
+  --set training.checkpoint_epochs=[1,5,10,25,50,100] `
+  --set training.save_checkpoint=false `
+  --set noise.mode=fixed_pool `
+  --set noise.pool_size=1000
+```
+
+The CIFAR-10 pool-seed robustness control is separate from the model-seed ladder.
+It holds the model/training seed fixed and varies only the fixed-pool seed. On a
+self-hosted runner, use:
+
+```text
+.github/workflows/wp2-cifar10-pool-seed-robustness.yml
+```
+
+The workflow runs `M in {1k,10k,20k,100k}` with `pool_seed in {111,222,333}` at
+fixed model seed `0`, using the same 100-epoch cosine CIFAR-10 setup.
 
 Plot the denoising-gap curves:
 
 ```powershell
 $env:PYTHONPATH = "src"
-py -3.12 -m fixed_noise_diffusion.plot_results --runs runs/cifar10_*
+$runs = Get-ChildItem runs/wp2_cifar10_pool_scaling_100ep -Directory | ForEach-Object { $_.FullName }
+py -3.12 -m fixed_noise_diffusion.plot_results `
+  --runs $runs `
+  --output runs/wp2_cifar10_pool_scaling_100ep/wp2_cifar10_pool_scaling_100ep.png
 ```
 
 ## STL-10 Validation
