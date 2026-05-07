@@ -114,6 +114,10 @@ def evaluate_checkpoint(
     train_eval_sampler, gaussian_eval_sampler = make_evaluation_samplers(
         train_noise_sampler, seed, epoch, device
     )
+    # Pair the denoising-law comparison over the same validation batches and
+    # timestep stream. The noise sampler is the only intended difference between
+    # train-law, fresh-Gaussian, and held-out-pool evaluation.
+    timestep_seed = seed + 30_000 + epoch
 
     train_den_loss = denoising_loss(
         model,
@@ -122,7 +126,7 @@ def evaluate_checkpoint(
         train_eval_sampler,
         device,
         int(eval_cfg["denoising_batches"]),
-        seed + 30_000 + epoch,
+        timestep_seed,
     )
     gaussian_den_loss = denoising_loss(
         model,
@@ -131,7 +135,7 @@ def evaluate_checkpoint(
         gaussian_eval_sampler,
         device,
         int(eval_cfg["denoising_batches"]),
-        seed + 40_000 + epoch,
+        timestep_seed,
     )
     heldout_pool_den_loss = None
     heldout_pool_seed = None
@@ -145,7 +149,7 @@ def evaluate_checkpoint(
             heldout_eval_sampler,
             device,
             int(eval_cfg["denoising_batches"]),
-            seed + 30_000 + epoch,
+            timestep_seed,
         )
     samples_path = run_dir / "samples" / f"epoch_{epoch:04d}.png"
     samples = sample_grid(
@@ -170,6 +174,7 @@ def evaluate_checkpoint(
         "train_den_loss": train_den_loss,
         "gaussian_den_loss": gaussian_den_loss,
         "denoising_gap": gaussian_den_loss - train_den_loss,
+        "denoising_eval_timestep_seed": timestep_seed,
         "heldout_pool_den_loss": heldout_pool_den_loss,
         "heldout_pool_gap": (
             None
