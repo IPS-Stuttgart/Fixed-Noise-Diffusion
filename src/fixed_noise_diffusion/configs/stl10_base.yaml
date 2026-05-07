@@ -1,3 +1,4 @@
+---
 inherits: cifar10_base.yaml
 
 run_name: stl10_base
