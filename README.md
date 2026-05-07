@@ -211,3 +211,10 @@ denoising_gap = held_out_gaussian_denoising_loss - training_law_denoising_loss
 For fixed pools, a positive and growing gap means the model is fitting the
 realized reusable noise law better than held-out fresh Gaussian noise. That is
 the first signal of support-limited overspecialization.
+
+## Citation and License
+
+This repository is released under the MIT License. See `LICENSE`.
+
+If you use this code, please cite the software release and the accompanying
+paper. Citation metadata is provided in `CITATION.cff`.
