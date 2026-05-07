@@ -16,6 +16,7 @@ CSV_FIELDS = [
     "train_den_loss",
     "heldout_pool_den_loss",
     "denoising_gap",
+    "denoising_eval_timestep_seed",
     "heldout_pool_gap",
     "gaussian_minus_heldout_gap",
     "fid",
