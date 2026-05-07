@@ -1,7 +1,8 @@
+---
 name: WP2 CelebA64 validation
 
-#checkov:skip=CKV_GHA_7:Manual research validation workflow intentionally needs operator-supplied runner, seed, data, and evaluation parameters.
-on:
+# checkov:skip=CKV_GHA_7: Manual research validation workflow intentionally needs operator-supplied runner, seed, data, and evaluation parameters.
+'on':
   workflow_dispatch:
     inputs:
       runner_labels_json:
