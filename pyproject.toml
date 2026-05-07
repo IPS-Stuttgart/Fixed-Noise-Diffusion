@@ -30,7 +30,7 @@ test = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-fixed_noise_diffusion = ["configs/*.yaml", "scripts/*.ps1"]
+fixed_noise_diffusion = ["configs/*.yaml", "scripts/*.ps1", "scripts/*.sh"]
 
 [tool.mypy]
 check_untyped_defs = true
