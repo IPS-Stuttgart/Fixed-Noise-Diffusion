@@ -8,7 +8,7 @@ permissions:
   pull-requests: write
   contents: write
 
-on: # yamllint disable-line rule:truthy
+'on':
   push:
     branches:
       - main
