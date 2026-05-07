@@ -1,6 +1,9 @@
 # WP2 CIFAR-10 Pool-Dtype Control
 
-This control checks whether the fixed-pool denoising-gap effect could be explained by storing reusable noise templates in half precision. The default fixed-pool implementation stores pools as `float16` for memory efficiency, while fresh Gaussian samples are generated directly as `float32`. The control repeats selected CIFAR-10 fixed-pool runs with `noise.pool_dtype=float16` and `noise.pool_dtype=float32` under the same training setup.
+This control checks whether the fixed-pool denoising-gap effect could be explained by storing reusable noise templates
+in half precision. The default fixed-pool implementation stores pools as `float16` for memory efficiency, while fresh
+Gaussian samples are generated directly as `float32`. The control repeats selected CIFAR-10 fixed-pool runs with
+`noise.pool_dtype=float16` and `noise.pool_dtype=float32` under the same training setup.
 
 ## Matrix
 

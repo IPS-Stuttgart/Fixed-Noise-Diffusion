@@ -15,7 +15,7 @@ on:
       data_dir:
         description: "Persistent CIFAR-10 cache on the self-hosted runner"
         required: true
-        default: "/home/florianpfaff/datasets/fixed-noise-diffusion"
+        default: "/home/github-runner/.cache/datasets/fixed-noise-diffusion"
       eval_subset_size:
         description: "Validation subset size for denoising diagnostics"
         required: true
