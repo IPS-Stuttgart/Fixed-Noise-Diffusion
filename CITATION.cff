@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the software release and the accompanying paper."
+type: software
+title: "Fixed-Noise Diffusion"
+abstract: "Research code for studying reusable finite Gaussian noise-template pools in diffusion-model training, including denoising-gap diagnostics for train-law specialization."
+authors:
+  - family-names: "Pfaff"
+    given-names: "Florian"
+    affiliation: "Institute for Industrial Automation and Software Engineering, University of Stuttgart"
+repository-code: "https://github.com/IPS-Stuttgart/Fixed-Noise-Diffusion"
+url: "https://github.com/IPS-Stuttgart/Fixed-Noise-Diffusion"
+version: "0.1.0"
+date-released: "2026-05-07"
+license: "MIT"
+keywords:
+  - diffusion models
+  - denoising diffusion probabilistic models
+  - reproducibility
+  - fixed noise
+  - finite support
+  - train-law specialization
+preferred-citation:
+  type: article
+  title: "Fixed Noise Supports in Diffusion Training: Reproducibility and Finite-Support Specialization"
+  authors:
+    - family-names: "Pfaff"
+      given-names: "Florian"
+      affiliation: "Institute for Industrial Automation and Software Engineering, University of Stuttgart"
+  year: 2026
