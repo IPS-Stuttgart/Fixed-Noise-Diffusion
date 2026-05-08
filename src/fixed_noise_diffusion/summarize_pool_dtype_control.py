@@ -56,7 +56,8 @@ def _data_cfg(config: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any
 
 
 def _pool_size(config: dict[str, Any], metadata: dict[str, Any], row: dict[str, Any]) -> int | None:
-    meta_noise = metadata.get("noise") if isinstance(metadata.get("noise"), dict) else {}
+    raw_meta_noise = metadata.get("noise")
+    meta_noise = raw_meta_noise if isinstance(raw_meta_noise, dict) else {}
     for value in (row.get("pool_size"), meta_noise.get("pool_size"), _noise_cfg(config).get("pool_size")):
         parsed = _as_int(value)
         if parsed is not None:
@@ -185,8 +186,38 @@ def main() -> None:
         raise ValueError(f"No dtype-control eval rows found under {args.runs_root}")
     summary_rows = summarize(eval_rows)
     out = args.output_dir.expanduser()
-    write_csv(out / f"{args.prefix}_eval_rows.csv", eval_rows, ["run_name", "dataset", "seed", "pool_size", "pool_dtype", "epoch", "step", "train_den_loss", "gaussian_den_loss", "denoising_gap", "source_metrics"])
-    write_csv(out / f"{args.prefix}_gap_summary.csv", summary_rows, ["dataset", "pool_size", "pool_dtype", "epoch", "n", "denoising_gap_mean", "denoising_gap_std", "denoising_gap_sem", "float32_minus_float16_gap_mean"])
+    write_csv(
+        out / f"{args.prefix}_eval_rows.csv",
+        eval_rows,
+        [
+            "run_name",
+            "dataset",
+            "seed",
+            "pool_size",
+            "pool_dtype",
+            "epoch",
+            "step",
+            "train_den_loss",
+            "gaussian_den_loss",
+            "denoising_gap",
+            "source_metrics",
+        ],
+    )
+    write_csv(
+        out / f"{args.prefix}_gap_summary.csv",
+        summary_rows,
+        [
+            "dataset",
+            "pool_size",
+            "pool_dtype",
+            "epoch",
+            "n",
+            "denoising_gap_mean",
+            "denoising_gap_std",
+            "denoising_gap_sem",
+            "float32_minus_float16_gap_mean",
+        ],
+    )
     if not args.no_plot:
         plot_summary(out / f"{args.prefix}.png", summary_rows)
     print(f"eval_rows={len(eval_rows)}")
