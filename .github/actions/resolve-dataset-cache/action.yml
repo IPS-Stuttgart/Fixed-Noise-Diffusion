@@ -32,13 +32,15 @@ runs:
       run: |
         set -euo pipefail
         data_dir="${{ inputs.data-dir }}"
+        tilde_prefix="~/"
+        home_prefix='$HOME/'
         if [ -z "${data_dir}" ]; then
           data_dir="${{ inputs.default-data-dir }}"
         fi
-        if [[ "${data_dir}" == "~/"* ]]; then
-          data_dir="${HOME}/${data_dir#~/}"
-        elif [[ "${data_dir}" == "\$HOME/"* ]]; then
-          data_dir="${HOME}/${data_dir#\$HOME/}"
+        if [[ "${data_dir}" == "${tilde_prefix}"* ]]; then
+          data_dir="${HOME}/${data_dir#"${tilde_prefix}"}"
+        elif [[ "${data_dir}" == "${home_prefix}"* ]]; then
+          data_dir="${HOME}/${data_dir#"${home_prefix}"}"
         fi
 
         mkdir -p "${data_dir}"
