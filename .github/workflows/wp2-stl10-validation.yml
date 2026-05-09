@@ -18,9 +18,9 @@ name: WP2 STL-10 validation
         required: true
         default: "wp2_stl10_validation"
       data_dir:
-        description: "Persistent dataset cache on the self-hosted runner"
-        required: true
-        default: "/home/florianpfaff/datasets/fixed-noise-diffusion"
+        description: "Persistent dataset cache on the self-hosted runner; leave empty to use $HOME/.cache/datasets/fixed-noise-diffusion"
+        required: false
+        default: ""
       python_bin:
         description: "Python executable on the self-hosted runner; leave empty to auto-detect"
         required: false
@@ -92,6 +92,21 @@ jobs:
           fi
           "${PYTHON_BIN}" --version
           echo "FND_PYTHON=${PYTHON_BIN}" >> "${GITHUB_ENV}"
+
+      - name: Resolve self-hosted dataset cache path
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${DATA_DIR:-}" ]; then
+            DATA_DIR="${HOME}/.cache/datasets/fixed-noise-diffusion"
+          elif [[ "${DATA_DIR}" == "~/"* ]]; then
+            DATA_DIR="${HOME}/${DATA_DIR#~/}"
+          elif [[ "${DATA_DIR}" == "\$HOME/"* ]]; then
+            DATA_DIR="${HOME}/${DATA_DIR#\$HOME/}"
+          fi
+          mkdir -p "${DATA_DIR}"
+          echo "DATA_DIR=${DATA_DIR}" >> "$GITHUB_ENV"
+          echo "data_dir=${DATA_DIR}"
 
       - name: Install dependencies
         shell: bash
