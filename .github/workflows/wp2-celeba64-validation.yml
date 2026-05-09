@@ -92,12 +92,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          TILDE_PREFIX=\~/
+          HOME_PREFIX=\$HOME/
           if [ -z "${DATA_DIR:-}" ]; then
             DATA_DIR="${HOME}/.cache/datasets/fixed-noise-diffusion"
-          elif [[ "${DATA_DIR}" == "~/"* ]]; then
-            DATA_DIR="${HOME}/${DATA_DIR#~/}"
-          elif [[ "${DATA_DIR}" == "\$HOME/"* ]]; then
-            DATA_DIR="${HOME}/${DATA_DIR#\$HOME/}"
+          elif [[ "${DATA_DIR}" == "${TILDE_PREFIX}"* ]]; then
+            DATA_DIR="${HOME}/${DATA_DIR#"${TILDE_PREFIX}"}"
+          elif [[ "${DATA_DIR}" == "${HOME_PREFIX}"* ]]; then
+            DATA_DIR="${HOME}/${DATA_DIR#"${HOME_PREFIX}"}"
           fi
           PIP_CACHE_DIR="${DATA_DIR}/pip-cache"
           mkdir -p "${DATA_DIR}" "${PIP_CACHE_DIR}"
