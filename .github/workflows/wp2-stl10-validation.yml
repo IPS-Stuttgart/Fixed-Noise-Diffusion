@@ -61,7 +61,6 @@ jobs:
       PYTHONPATH: src
       PYTHONNOUSERSITE: "1"
       OUTPUT_ROOT: runs/${{ inputs.run_group }}
-      DATA_DIR: ${{ inputs.data_dir }}
       FND_PYTHON_BIN: ${{ inputs.python_bin }}
 
     steps:
@@ -94,19 +93,10 @@ jobs:
           echo "FND_PYTHON=${PYTHON_BIN}" >> "${GITHUB_ENV}"
 
       - name: Resolve self-hosted dataset cache path
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${DATA_DIR:-}" ]; then
-            DATA_DIR="${HOME}/.cache/datasets/fixed-noise-diffusion"
-          elif [[ "${DATA_DIR}" == "~/"* ]]; then
-            DATA_DIR="${HOME}/${DATA_DIR#~/}"
-          elif [[ "${DATA_DIR}" == "\$HOME/"* ]]; then
-            DATA_DIR="${HOME}/${DATA_DIR#\$HOME/}"
-          fi
-          mkdir -p "${DATA_DIR}"
-          echo "DATA_DIR=${DATA_DIR}" >> "$GITHUB_ENV"
-          echo "data_dir=${DATA_DIR}"
+        uses: ./.github/actions/resolve-dataset-cache
+        with:
+          data-dir: ${{ inputs.data_dir }}
+          create-pip-cache: "false"
 
       - name: Install dependencies
         shell: bash

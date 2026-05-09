@@ -73,11 +73,6 @@ jobs:
       PYTHONPATH: src
       PYTHONNOUSERSITE: "1"
       OUTPUT_ROOT: runs/${{ inputs.run_group }}
-      DATA_DIR: ${{ inputs.data_dir }}
-      # Use a persistent local pip cache on the self-hosted runner instead of
-      # actions/setup-python's remote Actions cache. The latter produced
-      # intermittent Azure authentication failures during cache restore.
-      PIP_CACHE_DIR: ${{ inputs.data_dir }}/pip-cache
 
     steps:
       - name: Check out repository
@@ -89,22 +84,9 @@ jobs:
           python-version: "3.12"
 
       - name: Resolve self-hosted dataset cache paths
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${DATA_DIR:-}" ]; then
-            DATA_DIR="${HOME}/.cache/datasets/fixed-noise-diffusion"
-          elif [[ "${DATA_DIR}" == "~/"* ]]; then
-            DATA_DIR="${HOME}/${DATA_DIR#~/}"
-          elif [[ "${DATA_DIR}" == "\$HOME/"* ]]; then
-            DATA_DIR="${HOME}/${DATA_DIR#\$HOME/}"
-          fi
-          PIP_CACHE_DIR="${DATA_DIR}/pip-cache"
-          mkdir -p "${DATA_DIR}" "${PIP_CACHE_DIR}"
-          echo "DATA_DIR=${DATA_DIR}" >> "$GITHUB_ENV"
-          echo "PIP_CACHE_DIR=${PIP_CACHE_DIR}" >> "$GITHUB_ENV"
-          echo "data_dir=${DATA_DIR}"
-          echo "pip_cache_dir=${PIP_CACHE_DIR}"
+        uses: ./.github/actions/resolve-dataset-cache
+        with:
+          data-dir: ${{ inputs.data_dir }}
 
       - name: Runner and cache diagnostics
         shell: bash

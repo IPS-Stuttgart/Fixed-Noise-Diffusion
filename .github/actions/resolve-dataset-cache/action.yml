@@ -1,0 +1,57 @@
+name: Resolve dataset cache
+description: Resolve self-hosted dataset and optional pip cache paths under $HOME/.cache/datasets.
+
+inputs:
+  data-dir:
+    description: Requested dataset cache directory. Leave empty to use the default directory.
+    required: false
+    default: ""
+  default-data-dir:
+    description: Default dataset cache directory.
+    required: false
+    default: $HOME/.cache/datasets/fixed-noise-diffusion
+  create-pip-cache:
+    description: Whether to create and export PIP_CACHE_DIR below the dataset cache.
+    required: false
+    default: "true"
+
+outputs:
+  data-dir:
+    description: Resolved dataset cache directory.
+    value: ${{ steps.resolve.outputs.data-dir }}
+  pip-cache-dir:
+    description: Resolved pip cache directory, if requested.
+    value: ${{ steps.resolve.outputs.pip-cache-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve dataset cache paths
+      id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+        data_dir="${{ inputs.data-dir }}"
+        if [ -z "${data_dir}" ]; then
+          data_dir="${{ inputs.default-data-dir }}"
+        fi
+        if [[ "${data_dir}" == "~/"* ]]; then
+          data_dir="${HOME}/${data_dir#~/}"
+        elif [[ "${data_dir}" == "\$HOME/"* ]]; then
+          data_dir="${HOME}/${data_dir#\$HOME/}"
+        fi
+
+        mkdir -p "${data_dir}"
+        echo "DATA_DIR=${data_dir}" >> "$GITHUB_ENV"
+        echo "data-dir=${data_dir}" >> "$GITHUB_OUTPUT"
+        echo "data_dir=${data_dir}"
+
+        if [ "${{ inputs.create-pip-cache }}" = "true" ]; then
+          pip_cache_dir="${data_dir}/pip-cache"
+          mkdir -p "${pip_cache_dir}"
+          echo "PIP_CACHE_DIR=${pip_cache_dir}" >> "$GITHUB_ENV"
+          echo "pip-cache-dir=${pip_cache_dir}" >> "$GITHUB_OUTPUT"
+          echo "pip_cache_dir=${pip_cache_dir}"
+        else
+          echo "pip-cache-dir=" >> "$GITHUB_OUTPUT"
+        fi
