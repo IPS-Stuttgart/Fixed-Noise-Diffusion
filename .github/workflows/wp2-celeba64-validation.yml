@@ -22,9 +22,14 @@ name: WP2 CelebA64 validation
         required: true
         default: "wp2_celeba64_pilot"
       data_dir:
-        description: "Persistent CelebA cache on the self-hosted runner; leave empty to use $HOME/.cache/datasets/fixed-noise-diffusion"
+        description: "Persistent CelebA cache on the self-hosted runner; leave empty to use $HOME/github-runner/.cache/datasets/fixed-noise-diffusion"
         required: false
         default: ""
+      download_data:
+        description: "Allow torchvision to download CelebA on cache miss; keep false when data is pre-staged"
+        required: true
+        type: boolean
+        default: false
       subset_size:
         description: "Training subset size; use none for full CelebA train split"
         required: true
@@ -74,6 +79,7 @@ jobs:
       PYTHONNOUSERSITE: "1"
       OUTPUT_ROOT: runs/${{ inputs.run_group }}
       DATA_DIR: ${{ inputs.data_dir }}
+      DOWNLOAD_CELEBA: ${{ inputs.download_data }}
       # Use a persistent local pip cache on the self-hosted runner instead of
       # actions/setup-python's remote Actions cache. The latter produced
       # intermittent Azure authentication failures during cache restore.
@@ -95,7 +101,7 @@ jobs:
           TILDE_PREFIX=\~/
           HOME_PREFIX=\$HOME/
           if [ -z "${DATA_DIR:-}" ]; then
-            DATA_DIR="${HOME}/.cache/datasets/fixed-noise-diffusion"
+            DATA_DIR="${HOME}/github-runner/.cache/datasets/fixed-noise-diffusion"
           elif [[ "${DATA_DIR}" == "${TILDE_PREFIX}"* ]]; then
             DATA_DIR="${HOME}/${DATA_DIR#"${TILDE_PREFIX}"}"
           elif [[ "${DATA_DIR}" == "${HOME_PREFIX}"* ]]; then
@@ -131,7 +137,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
           python -m pip install -e .
-          python -m pip install gdown
+          if [ "${DOWNLOAD_CELEBA}" = "true" ]; then
+            python -m pip install gdown
+          fi
           if [ "${{ inputs.run_fid }}" = "true" ]; then
             python -m pip install -e '.[metrics]'
           fi
@@ -155,6 +163,7 @@ jobs:
           from torchvision import datasets
 
           root = os.environ["DATA_DIR"]
+          allow_download = os.environ.get("DOWNLOAD_CELEBA", "false").lower() == "true"
 
           def check_cache() -> bool:
               ok = True
@@ -175,6 +184,12 @@ jobs:
           if check_cache():
               print(f"CelebA cache ready at {root}; no download needed")
           else:
+              if not allow_download:
+                  raise RuntimeError(
+                      "CelebA cache is missing and download_data=false. "
+                      "Run Prepare Large Dataset Caches for celeba64, stage the files in DATA_DIR, "
+                      "or rerun this workflow with download_data=true if upstream access is reliable."
+                  )
               print(f"Preparing CelebA cache at {root}")
               for split in ("train", "valid"):
                   datasets.CelebA(
