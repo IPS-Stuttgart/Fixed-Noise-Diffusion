@@ -1,0 +1,211 @@
+---
+name: Prepare Large Dataset Caches
+
+"on":
+  workflow_dispatch:
+    inputs:
+      runner_labels_json:
+        description: "JSON array of self-hosted Linux runner labels"
+        required: true
+        default: '["self-hosted", "Linux"]'
+      dataset:
+        description: "Large dataset cache to prepare"
+        required: true
+        type: choice
+        default: "stl10"
+        options:
+          - stl10
+          - celeba64
+          - all
+      data_dir:
+        description: "Persistent dataset cache root; leave empty for $HOME/github-runner/.cache/datasets/fixed-noise-diffusion"
+        required: false
+        default: ""
+      python_bin:
+        description: "Python executable on the self-hosted runner; leave empty to use setup-python"
+        required: false
+        default: ""
+      download_celeba:
+        description: "Allow torchvision to download CelebA if it is missing"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  prepare-large-datasets:
+    name: prepare-${{ inputs.dataset }}
+    runs-on: ${{ fromJSON(inputs.runner_labels_json) }}
+    timeout-minutes: 240
+
+    env:
+      DATA_DIR: ${{ inputs.data_dir }}
+      FND_PYTHON_BIN: ${{ inputs.python_bin }}
+      DATASET: ${{ inputs.dataset }}
+      DOWNLOAD_CELEBA: ${{ inputs.download_celeba }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        if: ${{ inputs.python_bin == '' }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Select Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${FND_PYTHON_BIN}" ]; then
+            PYTHON_BIN="${FND_PYTHON_BIN}"
+          elif [ -x ".venv/bin/python" ]; then
+            PYTHON_BIN="${PWD}/.venv/bin/python"
+          elif command -v python3.12 >/dev/null 2>&1; then
+            PYTHON_BIN="$(command -v python3.12)"
+          elif command -v python3 >/dev/null 2>&1; then
+            PYTHON_BIN="$(command -v python3)"
+          else
+            echo "No usable Python executable found" >&2
+            exit 2
+          fi
+          "${PYTHON_BIN}" --version
+          echo "FND_PYTHON=${PYTHON_BIN}" >> "${GITHUB_ENV}"
+
+      - name: Resolve dataset cache path
+        shell: bash
+        run: |
+          set -euo pipefail
+          TILDE_PREFIX=\~/
+          HOME_PREFIX=\$HOME/
+          if [ -z "${DATA_DIR:-}" ]; then
+            DATA_DIR="${HOME}/github-runner/.cache/datasets/fixed-noise-diffusion"
+          elif [[ "${DATA_DIR}" == "${TILDE_PREFIX}"* ]]; then
+            DATA_DIR="${HOME}/${DATA_DIR#"${TILDE_PREFIX}"}"
+          elif [[ "${DATA_DIR}" == "${HOME_PREFIX}"* ]]; then
+            DATA_DIR="${HOME}/${DATA_DIR#"${HOME_PREFIX}"}"
+          fi
+          PIP_CACHE_DIR="${DATA_DIR}/pip-cache"
+          mkdir -p "${DATA_DIR}" "${PIP_CACHE_DIR}"
+          echo "DATA_DIR=${DATA_DIR}" >> "${GITHUB_ENV}"
+          echo "PIP_CACHE_DIR=${PIP_CACHE_DIR}" >> "${GITHUB_ENV}"
+          echo "data_dir=${DATA_DIR}"
+          echo "pip_cache_dir=${PIP_CACHE_DIR}"
+          df -h "${DATA_DIR}" || true
+
+      - name: Install dataset dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${FND_PYTHON}" -m pip install --upgrade pip
+          if ! "${FND_PYTHON}" - <<'PY'
+          import torch
+          import torchvision
+          print(f"torch={torch.__version__}; torchvision={torchvision.__version__}")
+          PY
+          then
+            "${FND_PYTHON}" -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          fi
+          if [ "${DOWNLOAD_CELEBA}" = "true" ]; then
+            "${FND_PYTHON}" -m pip install gdown
+          fi
+
+      - name: Prepare STL-10 cache
+        if: ${{ inputs.dataset == 'stl10' || inputs.dataset == 'all' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${DATA_DIR}"
+          (
+            flock 9
+            "${FND_PYTHON}" - <<'PY'
+          import os
+          from pathlib import Path
+          from torchvision import datasets
+
+          root = os.environ["DATA_DIR"]
+          for split in ("train+unlabeled", "test"):
+              dataset = datasets.STL10(root=root, split=split, download=True)
+              print(f"STL-10 {split} cache ready: {len(dataset)} examples")
+
+          manifest = Path(root) / "STL10_MANIFEST.txt"
+          files = sorted(Path(root).glob("stl10_binary/*"))
+          manifest.write_text(
+              "STL-10 cache prepared by GitHub Actions\n"
+              + f"Root: {root}\n"
+              + "\n".join(f"{p.stat().st_size} {p}" for p in files if p.is_file())
+              + "\n",
+              encoding="utf-8",
+          )
+          print(f"STL-10 cache ready at {root}")
+          PY
+          ) 9>"${DATA_DIR}/.stl10_download.lock"
+          du -sh "${DATA_DIR}" || true
+
+      - name: Prepare CelebA64 cache
+        if: ${{ inputs.dataset == 'celeba64' || inputs.dataset == 'all' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${DATA_DIR}"
+          (
+            flock 9
+            "${FND_PYTHON}" - <<'PY'
+          import os
+          from pathlib import Path
+          from torchvision import datasets
+
+          root = os.environ["DATA_DIR"]
+          allow_download = os.environ.get("DOWNLOAD_CELEBA", "false").lower() == "true"
+
+          def check_cache() -> bool:
+              ok = True
+              for split in ("train", "valid"):
+                  try:
+                      dataset = datasets.CelebA(
+                          root=root,
+                          split=split,
+                          target_type="attr",
+                          download=False,
+                      )
+                      print(f"CelebA {split} cache hit: {len(dataset)} examples")
+                  except RuntimeError as exc:
+                      print(f"CelebA {split} cache miss: {exc}")
+                      ok = False
+              return ok
+
+          if not check_cache():
+              if not allow_download:
+                  raise RuntimeError(
+                      "CelebA cache is missing and download_celeba=false. "
+                      "Stage the dataset in DATA_DIR or rerun this workflow with download_celeba=true."
+                  )
+              for split in ("train", "valid"):
+                  datasets.CelebA(
+                      root=root,
+                      split=split,
+                      target_type="attr",
+                      download=True,
+                  )
+              if not check_cache():
+                  raise RuntimeError(f"CelebA cache was not valid after download at {root}")
+
+          manifest = Path(root) / "CELEBA64_MANIFEST.txt"
+          files = sorted(Path(root).glob("celeba/**/*"))
+          manifest.write_text(
+              "CelebA64 cache prepared by GitHub Actions\n"
+              + f"Root: {root}\n"
+              + "\n".join(f"{p.stat().st_size} {p}" for p in files if p.is_file())
+              + "\n",
+              encoding="utf-8",
+          )
+          print(f"CelebA cache ready at {root}")
+          PY
+          ) 9>"${DATA_DIR}/.celeba_download.lock"
+          du -sh "${DATA_DIR}" || true
