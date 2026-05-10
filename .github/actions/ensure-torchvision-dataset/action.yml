@@ -1,0 +1,113 @@
+name: Ensure torchvision dataset
+description: Resolve, restore, download, validate, and cache a torchvision dataset directory.
+
+inputs:
+  dataset:
+    description: Dataset to prepare.
+    required: true
+  data-root:
+    description: Dataset cache root. Empty defaults to $HOME/github-runner/.cache/datasets/fixed-noise-diffusion.
+    required: false
+    default: ""
+  python:
+    description: Python executable with torch and torchvision installed.
+    required: false
+    default: python
+  cache-key:
+    description: Optional GitHub Actions cache key for GitHub-hosted runners.
+    required: false
+    default: ""
+  allow-download:
+    description: Allow upstream downloads for datasets that may be manually staged, such as CelebA.
+    required: false
+    default: "true"
+
+outputs:
+  data-root:
+    description: Resolved dataset cache root.
+    value: ${{ steps.resolve.outputs.data-root }}
+  cache-hit:
+    description: true when a GitHub Actions cache was restored.
+    value: ${{ steps.finish.outputs.cache-hit }}
+  source:
+    description: github-cache or prepared.
+    value: ${{ steps.finish.outputs.source }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve dataset cache root
+      id: resolve
+      shell: bash
+      env:
+        INPUT_DATA_ROOT: ${{ inputs.data-root }}
+      run: |
+        set -euo pipefail
+        TILDE_PREFIX=\~/
+        HOME_PREFIX=\$HOME/
+        data_root="${INPUT_DATA_ROOT}"
+        if [ -z "${data_root:-}" ]; then
+          data_root="${HOME}/github-runner/.cache/datasets/fixed-noise-diffusion"
+        elif [[ "${data_root}" == "${TILDE_PREFIX}"* ]]; then
+          data_root="${HOME}/${data_root#"${TILDE_PREFIX}"}"
+        elif [[ "${data_root}" == "${HOME_PREFIX}"* ]]; then
+          data_root="${HOME}/${data_root#"${HOME_PREFIX}"}"
+        fi
+        mkdir -p "${data_root}"
+        echo "data-root=${data_root}" >> "$GITHUB_OUTPUT"
+        echo "DATA_DIR=${data_root}" >> "$GITHUB_ENV"
+
+    - name: Restore GitHub dataset cache
+      id: github-cache
+      if: ${{ runner.environment != 'self-hosted' && inputs.cache-key != '' }}
+      uses: actions/cache/restore@v5
+      with:
+        path: ${{ steps.resolve.outputs.data-root }}
+        key: ${{ inputs.cache-key }}
+
+    - name: Prepare torchvision dataset
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        DATASET: ${{ inputs.dataset }}
+        DATA_ROOT: ${{ steps.resolve.outputs.data-root }}
+        FND_PYTHON: ${{ inputs.python }}
+        ALLOW_DOWNLOAD: ${{ inputs.allow-download }}
+      run: |
+        set -euo pipefail
+        lock_name="$(printf '%s' "${DATASET}" | tr -c 'A-Za-z0-9_.-' '_')"
+        mkdir -p "${DATA_ROOT}"
+        (
+          flock 9
+          download_arg=()
+          if [ "${ALLOW_DOWNLOAD}" = "true" ]; then
+            download_arg+=(--allow-download)
+          fi
+          "${FND_PYTHON}" "${ACTION_PATH}/ensure_dataset.py" \
+            --dataset "${DATASET}" \
+            --data-root "${DATA_ROOT}" \
+            "${download_arg[@]}"
+        ) 9>"${DATA_ROOT}/.${lock_name}_download.lock"
+        du -sh "${DATA_ROOT}" || true
+
+    - name: Save GitHub dataset cache
+      if: ${{ runner.environment != 'self-hosted' && inputs.cache-key != '' && steps.github-cache.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@v5
+      continue-on-error: true
+      with:
+        path: ${{ steps.resolve.outputs.data-root }}
+        key: ${{ inputs.cache-key }}
+
+    - name: Finalize dataset cache
+      id: finish
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ '${{ steps.github-cache.outputs.cache-hit }}' = 'true' ]; then
+          echo "cache-hit=true" >> "$GITHUB_OUTPUT"
+          echo "source=github-cache" >> "$GITHUB_OUTPUT"
+        else
+          echo "cache-hit=false" >> "$GITHUB_OUTPUT"
+          echo "source=prepared" >> "$GITHUB_OUTPUT"
+        fi
+        echo "Prepared ${{ inputs.dataset }} at ${{ steps.resolve.outputs.data-root }}"

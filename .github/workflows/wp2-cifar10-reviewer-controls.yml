@@ -147,25 +147,12 @@ jobs:
           print(f"device={torch.cuda.get_device_name(0)}")
           PY
 
-      - name: Prepare CIFAR-10 dataset cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "${DATA_DIR}"
-          (
-            flock 9
-            python - <<'PY'
-          import os
-          from torchvision import datasets
-
-          root = os.environ["DATA_DIR"]
-          for train in (True, False):
-              dataset = datasets.CIFAR10(root=root, train=train, download=True)
-              split = "train" if train else "test"
-              print(f"CIFAR-10 {split} cache ready: {len(dataset)} examples")
-          print(f"CIFAR-10 cache ready at {root}")
-          PY
-          ) 9>"${DATA_DIR}/.cifar10_download.lock"
+      - name: Ensure CIFAR-10 dataset cache
+        uses: ./.github/actions/ensure-torchvision-dataset
+        with:
+          dataset: cifar10
+          data-root: ${{ env.DATA_DIR }}
+          python: python
 
       - name: Run CIFAR-10 reviewer-control condition
         shell: bash
