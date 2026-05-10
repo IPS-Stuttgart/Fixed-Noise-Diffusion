@@ -116,96 +116,19 @@ jobs:
             "${FND_PYTHON}" -m pip install gdown
           fi
 
-      - name: Prepare STL-10 cache
+      - name: Ensure STL-10 dataset cache
         if: ${{ inputs.dataset == 'stl10' || inputs.dataset == 'all' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "${DATA_DIR}"
-          (
-            flock 9
-            "${FND_PYTHON}" - <<'PY'
-          import os
-          from pathlib import Path
-          from torchvision import datasets
+        uses: ./.github/actions/ensure-torchvision-dataset
+        with:
+          dataset: stl10
+          data-root: ${{ env.DATA_DIR }}
+          python: ${{ env.FND_PYTHON }}
 
-          root = os.environ["DATA_DIR"]
-          for split in ("train+unlabeled", "test"):
-              dataset = datasets.STL10(root=root, split=split, download=True)
-              print(f"STL-10 {split} cache ready: {len(dataset)} examples")
-
-          manifest = Path(root) / "STL10_MANIFEST.txt"
-          files = sorted(Path(root).glob("stl10_binary/*"))
-          manifest.write_text(
-              "STL-10 cache prepared by GitHub Actions\n"
-              + f"Root: {root}\n"
-              + "\n".join(f"{p.stat().st_size} {p}" for p in files if p.is_file())
-              + "\n",
-              encoding="utf-8",
-          )
-          print(f"STL-10 cache ready at {root}")
-          PY
-          ) 9>"${DATA_DIR}/.stl10_download.lock"
-          du -sh "${DATA_DIR}" || true
-
-      - name: Prepare CelebA64 cache
+      - name: Ensure CelebA64 dataset cache
         if: ${{ inputs.dataset == 'celeba64' || inputs.dataset == 'all' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "${DATA_DIR}"
-          (
-            flock 9
-            "${FND_PYTHON}" - <<'PY'
-          import os
-          from pathlib import Path
-          from torchvision import datasets
-
-          root = os.environ["DATA_DIR"]
-          allow_download = os.environ.get("DOWNLOAD_CELEBA", "false").lower() == "true"
-
-          def check_cache() -> bool:
-              ok = True
-              for split in ("train", "valid"):
-                  try:
-                      dataset = datasets.CelebA(
-                          root=root,
-                          split=split,
-                          target_type="attr",
-                          download=False,
-                      )
-                      print(f"CelebA {split} cache hit: {len(dataset)} examples")
-                  except RuntimeError as exc:
-                      print(f"CelebA {split} cache miss: {exc}")
-                      ok = False
-              return ok
-
-          if not check_cache():
-              if not allow_download:
-                  raise RuntimeError(
-                      "CelebA cache is missing and download_celeba=false. "
-                      "Stage the dataset in DATA_DIR or rerun this workflow with download_celeba=true."
-                  )
-              for split in ("train", "valid"):
-                  datasets.CelebA(
-                      root=root,
-                      split=split,
-                      target_type="attr",
-                      download=True,
-                  )
-              if not check_cache():
-                  raise RuntimeError(f"CelebA cache was not valid after download at {root}")
-
-          manifest = Path(root) / "CELEBA64_MANIFEST.txt"
-          files = sorted(Path(root).glob("celeba/**/*"))
-          manifest.write_text(
-              "CelebA64 cache prepared by GitHub Actions\n"
-              + f"Root: {root}\n"
-              + "\n".join(f"{p.stat().st_size} {p}" for p in files if p.is_file())
-              + "\n",
-              encoding="utf-8",
-          )
-          print(f"CelebA cache ready at {root}")
-          PY
-          ) 9>"${DATA_DIR}/.celeba_download.lock"
-          du -sh "${DATA_DIR}" || true
+        uses: ./.github/actions/ensure-torchvision-dataset
+        with:
+          dataset: celeba64
+          data-root: ${{ env.DATA_DIR }}
+          python: ${{ env.FND_PYTHON }}
+          allow-download: ${{ env.DOWNLOAD_CELEBA }}

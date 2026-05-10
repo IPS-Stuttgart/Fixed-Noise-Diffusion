@@ -151,58 +151,13 @@ jobs:
               print(f"device={torch.cuda.get_device_name(0)}")
           PY
 
-      - name: Prepare CelebA dataset cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "${DATA_DIR}"
-          (
-            flock 9
-            python - <<'PY'
-          import os
-          from torchvision import datasets
-
-          root = os.environ["DATA_DIR"]
-          allow_download = os.environ.get("DOWNLOAD_CELEBA", "false").lower() == "true"
-
-          def check_cache() -> bool:
-              ok = True
-              for split in ("train", "valid"):
-                  try:
-                      dataset = datasets.CelebA(
-                          root=root,
-                          split=split,
-                          target_type="attr",
-                          download=False,
-                      )
-                      print(f"CelebA {split} cache hit: {len(dataset)} examples")
-                  except RuntimeError as exc:
-                      print(f"CelebA {split} cache miss: {exc}")
-                      ok = False
-              return ok
-
-          if check_cache():
-              print(f"CelebA cache ready at {root}; no download needed")
-          else:
-              if not allow_download:
-                  raise RuntimeError(
-                      "CelebA cache is missing and download_data=false. "
-                      "Run Prepare Large Dataset Caches for celeba64, stage the files in DATA_DIR, "
-                      "or rerun this workflow with download_data=true if upstream access is reliable."
-                  )
-              print(f"Preparing CelebA cache at {root}")
-              for split in ("train", "valid"):
-                  datasets.CelebA(
-                      root=root,
-                      split=split,
-                      target_type="attr",
-                      download=True,
-                  )
-              if not check_cache():
-                  raise RuntimeError(f"CelebA cache was not valid after download at {root}")
-              print(f"CelebA cache ready at {root}")
-          PY
-          ) 9>"${DATA_DIR}/.celeba_download.lock"
+      - name: Ensure CelebA64 dataset cache
+        uses: ./.github/actions/ensure-torchvision-dataset
+        with:
+          dataset: celeba64
+          data-root: ${{ env.DATA_DIR }}
+          python: python
+          allow-download: ${{ env.DOWNLOAD_CELEBA }}
 
       - name: Run CelebA64 condition
         shell: bash

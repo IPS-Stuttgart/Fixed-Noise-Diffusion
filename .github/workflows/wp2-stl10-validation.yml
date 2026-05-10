@@ -142,23 +142,12 @@ jobs:
             fi
           fi
 
-      - name: Prepare STL-10 dataset cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "${DATA_DIR}"
-          (
-            flock 9
-            "${FND_PYTHON}" - <<'PY'
-          import os
-          from torchvision import datasets
-
-          root = os.environ["DATA_DIR"]
-          for split in ("train+unlabeled", "test"):
-              datasets.STL10(root=root, split=split, download=True)
-          print(f"STL-10 cache ready at {root}")
-          PY
-          ) 9>"${DATA_DIR}/.stl10_download.lock"
+      - name: Ensure STL-10 dataset cache
+        uses: ./.github/actions/ensure-torchvision-dataset
+        with:
+          dataset: stl10
+          data-root: ${{ env.DATA_DIR }}
+          python: ${{ env.FND_PYTHON }}
 
       - name: Run STL-10 condition
         shell: bash
