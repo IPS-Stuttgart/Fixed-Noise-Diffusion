@@ -18,7 +18,7 @@ name: WP2 STL-10 validation
         required: true
         default: "wp2_stl10_validation"
       data_dir:
-        description: "Persistent dataset cache on the self-hosted runner; leave empty to use $HOME/.cache/datasets/fixed-noise-diffusion"
+        description: "Persistent dataset cache on the self-hosted runner; leave empty to use $HOME/github-runner/.cache/datasets/fixed-noise-diffusion"
         required: false
         default: ""
       python_bin:
@@ -100,7 +100,7 @@ jobs:
           TILDE_PREFIX=\~/
           HOME_PREFIX=\$HOME/
           if [ -z "${DATA_DIR:-}" ]; then
-            DATA_DIR="${HOME}/.cache/datasets/fixed-noise-diffusion"
+            DATA_DIR="${HOME}/github-runner/.cache/datasets/fixed-noise-diffusion"
           elif [[ "${DATA_DIR}" == "${TILDE_PREFIX}"* ]]; then
             DATA_DIR="${HOME}/${DATA_DIR#"${TILDE_PREFIX}"}"
           elif [[ "${DATA_DIR}" == "${HOME_PREFIX}"* ]]; then
