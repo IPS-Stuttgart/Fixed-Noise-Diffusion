@@ -12,6 +12,10 @@ on:
         description: "Output group name under runs/"
         required: true
         default: "wp2_cifar10_reviewer_controls_100ep"
+      seed_list_json:
+        description: "JSON array of model seeds to run"
+        required: true
+        default: "[0]"
       data_dir:
         description: "Persistent CIFAR-10 cache on the self-hosted runner; leave empty to use $HOME/.cache/datasets/fixed-noise-diffusion"
         required: false
@@ -71,7 +75,7 @@ jobs:
       max-parallel: 2
       matrix:
         pool_size: [1000, 10000, 100000]
-        seed: [0]
+        seed: ${{ fromJSON(inputs.seed_list_json) }}
 
     env:
       PYTHONPATH: src
