@@ -5,6 +5,11 @@ name: WP2 CIFAR-10 pool-seed robustness
 "on":
   workflow_dispatch:
     inputs:
+      publish_to_paper_repo:
+        description: "Dispatch paper-repo build-results workflow to fetch this raw artifact"
+        required: true
+        type: boolean
+        default: false
       model_seed:
         description: "Model/training seed to hold fixed while varying pool_seed"
         required: true
@@ -176,3 +181,41 @@ jobs:
           path: compact_artifacts/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Dispatch paper repository build-results workflow
+        if: ${{ inputs.publish_to_paper_repo == true }}
+        env:
+          PAPER_REPO_TOKEN: ${{ secrets.PAPER_REPO_TOKEN }}
+          PAPER_REPO: FlorianPfaff/Fixed-Noise-Diffusion-Paper
+          SOURCE_REPO: IPS-Stuttgart/Fixed-Noise-Diffusion
+          SOURCE_RUN_ID: ${{ github.run_id }}
+          ARTIFACT_NAME: cifar10-pool${{ matrix.pool_size }}-poolseed${{ matrix.pool_seed }}-seed${{ inputs.model_seed }}-compact
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${PAPER_REPO_TOKEN:-}" ]; then
+            echo "::warning::publish_to_paper_repo=true but PAPER_REPO_TOKEN is not configured; skipping paper workflow dispatch"
+            exit 0
+          fi
+          payload=$(python - <<'PY'
+          import json
+          import os
+
+          print(json.dumps({
+              "ref": "main",
+              "inputs": {
+                  "source_repo": os.environ["SOURCE_REPO"],
+                  "source_run_id": os.environ["SOURCE_RUN_ID"],
+                  "artifact_name": os.environ["ARTIFACT_NAME"],
+              },
+          }))
+          PY
+          )
+
+          curl -fsSL \
+            -X POST \
+            -H "Authorization: Bearer ${PAPER_REPO_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${PAPER_REPO}/actions/workflows/build-results.yml/dispatches" \
+            -d "$payload"
