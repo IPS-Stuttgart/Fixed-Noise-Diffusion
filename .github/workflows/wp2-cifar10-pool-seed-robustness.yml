@@ -169,7 +169,7 @@ jobs:
           done
 
       - name: Upload compact run artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: cifar10-pool${{ matrix.pool_size }}-poolseed${{ matrix.pool_seed }}-seed${{ inputs.model_seed }}-compact
