@@ -50,6 +50,31 @@ def _save_checkpoint(
     torch.save(checkpoint, run_dir / "checkpoints" / f"epoch_{epoch:04d}.pt")
 
 
+def _accumulation_group_size(
+    batch_index: int,
+    total_batches: int,
+    grad_accum_steps: int,
+) -> int:
+    if grad_accum_steps < 1:
+        raise ValueError("training.grad_accum_steps must be at least 1")
+    if total_batches < 1:
+        raise ValueError("total_batches must be at least 1")
+    if batch_index < 1 or batch_index > total_batches:
+        raise ValueError("batch_index must be within the current epoch")
+
+    group_start = ((batch_index - 1) // grad_accum_steps) * grad_accum_steps + 1
+    return min(grad_accum_steps, total_batches - group_start + 1)
+
+
+def _should_finish_accumulation(
+    batch_index: int,
+    total_batches: int,
+    grad_accum_steps: int,
+) -> bool:
+    _accumulation_group_size(batch_index, total_batches, grad_accum_steps)
+    return batch_index % grad_accum_steps == 0 or batch_index == total_batches
+
+
 def make_evaluation_samplers(
     train_noise_sampler,
     seed: int,
@@ -251,10 +276,15 @@ def train(config: dict[str, Any]) -> Path:
     last_eval_record = None
     max_train_steps = config["training"].get("max_train_steps")
     grad_accum_steps = int(config["training"].get("grad_accum_steps", 1))
+    if grad_accum_steps < 1:
+        raise ValueError("training.grad_accum_steps must be at least 1")
     log_interval = int(config["training"].get("log_interval_steps", 100))
 
     for epoch in range(1, int(config["training"]["epochs"]) + 1):
         model.train()
+        total_train_batches = len(loaders.train)
+        if total_train_batches < 1:
+            continue
         progress = tqdm(loaders.train, desc=f"epoch {epoch}", leave=False)
         optimizer.zero_grad(set_to_none=True)
         for batch_index, (images, _) in enumerate(progress, start=1):
@@ -270,13 +300,22 @@ def train(config: dict[str, Any]) -> Path:
             )
             noise = train_noise_sampler.sample(batch_size)
             noisy = diffusion.q_sample(images, timesteps, noise)
+            accumulation_steps = _accumulation_group_size(
+                batch_index,
+                total_train_batches,
+                grad_accum_steps,
+            )
             with autocast(enabled=amp_enabled):
                 pred_noise = model(noisy, timesteps)
                 loss = F.mse_loss(pred_noise, noise, reduction="mean")
-                scaled_loss = loss / grad_accum_steps
+                scaled_loss = loss / accumulation_steps
             scaler.scale(scaled_loss).backward()
 
-            if batch_index % grad_accum_steps == 0:
+            if _should_finish_accumulation(
+                batch_index,
+                total_train_batches,
+                grad_accum_steps,
+            ):
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
