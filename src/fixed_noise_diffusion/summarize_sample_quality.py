@@ -18,9 +18,66 @@ from .utils import (
 )
 
 POOL_RE = re.compile(r"(?:fixed_pool|fixed_pool_whitened)_(?P<size>\d+)(?P<unit>k?)$")
+RUN_RE = re.compile(r"wp2_(?:\d+ep)_(?P<condition>.+)_seed(?P<seed>\d+)$")
+DATASET_PREFIXES = {
+    "cifar10": ("cifar10", "cifar-10"),
+    "stl10": ("stl10", "stl-10"),
+    "celeba64": ("celeba64", "celeba-64", "celeba"),
+}
+
+
+def normalize_dataset_label(dataset: str | None) -> str:
+    if dataset is None:
+        return ""
+    normalized = str(dataset).strip().lower().replace("-", "")
+    if normalized in {"", "none", "null", "unknown"}:
+        return ""
+    if normalized in {"cifar10", "cifar"}:
+        return "cifar10"
+    if normalized in {"stl10", "stl"}:
+        return "stl10"
+    if normalized in {"celeba", "celeba64"}:
+        return "celeba64"
+    return normalized
+
+
+def split_dataset_condition(condition: str) -> tuple[str, str]:
+    condition = str(condition)
+    for dataset, aliases in DATASET_PREFIXES.items():
+        for alias in aliases:
+            prefix = f"{alias}_"
+            if condition.startswith(prefix):
+                return dataset, condition[len(prefix) :]
+    return "", condition
+
+
+def _condition_from_run_name(run_name: str) -> str:
+    match = RUN_RE.match(str(run_name))
+    return match.group("condition") if match else ""
+
+
+def canonical_condition(condition: str) -> str:
+    _, canonical = split_dataset_condition(condition)
+    return canonical
+
+
+def infer_quality_dataset(row: dict[str, str], canonical: str) -> str:
+    dataset = normalize_dataset_label(row.get("dataset"))
+    if dataset:
+        return dataset
+    for key in ("source_condition", "condition"):
+        dataset, _ = split_dataset_condition(row.get(key, ""))
+        if dataset:
+            return dataset
+    run_condition = _condition_from_run_name(row.get("run_name", ""))
+    dataset, run_canonical = split_dataset_condition(run_condition)
+    if dataset and (not canonical or run_canonical == canonical):
+        return dataset
+    return ""
 
 
 def condition_kind(condition: str) -> str:
+    condition = canonical_condition(condition)
     if condition == "gaussian" or condition.endswith("_gaussian"):
         return "gaussian"
     if "whitened" in condition:
@@ -29,6 +86,7 @@ def condition_kind(condition: str) -> str:
 
 
 def condition_pool_size(condition: str) -> int | None:
+    condition = canonical_condition(condition)
     if condition == "gaussian":
         return None
     match = POOL_RE.search(condition)
@@ -69,9 +127,13 @@ def read_quality_rows(paths: list[Path]) -> list[dict[str, str]]:
     for path in find_quality_csvs(paths):
         with path.open("r", newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
-                condition = row["condition"]
+                original_condition = row["condition"]
+                condition = canonical_condition(original_condition)
                 row = dict(row)
                 row["source_csv"] = str(path)
+                row["source_condition"] = original_condition
+                row["condition"] = condition
+                row["dataset"] = infer_quality_dataset(row, condition)
                 row["kind"] = condition_kind(condition)
                 pool_size = condition_pool_size(condition)
                 row["pool_size"] = "" if pool_size is None else str(pool_size)
@@ -79,6 +141,7 @@ def read_quality_rows(paths: list[Path]) -> list[dict[str, str]]:
     return sorted(
         rows,
         key=lambda row: (
+            row["dataset"],
             row["kind"],
             int(row["pool_size"]) if row["pool_size"] else 10**18,
             row["condition"],
@@ -89,19 +152,18 @@ def read_quality_rows(paths: list[Path]) -> list[dict[str, str]]:
 
 
 def summarize_quality(rows: list[dict[str, str]]) -> list[dict[str, str]]:
-    grouped: dict[tuple[str, str, str, str], list[dict[str, str]]] = defaultdict(list)
+    grouped: dict[tuple[str, str, str, str, str], list[dict[str, str]]] = defaultdict(list)
     for row in rows:
-        grouped[(row["kind"], row["condition"], row["pool_size"], row["epoch"])].append(
-            row
-        )
+        grouped[(row.get("dataset", ""), row["kind"], row["condition"], row["pool_size"], row["epoch"])].append(row)
 
     summary: list[dict[str, str]] = []
-    for (kind, condition, pool_size, epoch), group in grouped.items():
+    for (dataset, kind, condition, pool_size, epoch), group in grouped.items():
         fids = [float_or_nan(row.get("fid")) for row in group]
         kids = [float_or_nan(row.get("kid_mean")) for row in group]
         seconds = [float_or_nan(row.get("seconds")) for row in group]
         summary.append(
             {
+                "dataset": dataset,
                 "kind": kind,
                 "condition": condition,
                 "pool_size": pool_size,
@@ -117,6 +179,7 @@ def summarize_quality(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return sorted(
         summary,
         key=lambda row: (
+            row["dataset"],
             row["kind"],
             int(row["pool_size"]) if row["pool_size"] else 10**18,
             row["condition"],
@@ -125,35 +188,38 @@ def summarize_quality(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     )
 
 
-def read_gap_rows(paths: list[Path]) -> dict[str, dict[str, str]]:
-    latest: dict[str, dict[str, str]] = {}
+def read_gap_rows(paths: list[Path]) -> dict[tuple[str, str, str], dict[str, str]]:
+    gaps: dict[tuple[str, str, str], dict[str, str]] = {}
     for path in paths:
         with path.expanduser().open("r", newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
-                condition = row["condition"]
-                current_epoch = int(row.get("epoch") or 0)
-                prior_epoch = int(latest.get(condition, {}).get("epoch") or -1)
-                if current_epoch < prior_epoch:
-                    continue
-                gap_mean = row.get(
-                    "denoising_gap_mean", row.get("mean_denoising_gap", "")
-                )
+                condition = canonical_condition(row["condition"])
+                epoch = str(int(row.get("epoch") or 0))
+                dataset = normalize_dataset_label(row.get("dataset"))
+                gap_mean = row.get("denoising_gap_mean", row.get("mean_denoising_gap", ""))
                 gap_std = row.get("denoising_gap_std", row.get("std_denoising_gap", ""))
-                latest[condition] = {
-                    "epoch": str(current_epoch),
+                gaps[(dataset, condition, epoch)] = {
+                    "dataset": dataset,
+                    "condition": condition,
+                    "epoch": epoch,
                     "denoising_gap_mean": gap_mean,
                     "denoising_gap_std": gap_std,
                 }
-    return latest
+    return gaps
 
 
 def merge_gap_summary(
-    quality_summary: list[dict[str, str]], gap_rows: dict[str, dict[str, str]]
+    quality_summary: list[dict[str, str]], gap_rows: dict[tuple[str, str, str], dict[str, str]]
 ) -> list[dict[str, str]]:
     merged: list[dict[str, str]] = []
     for row in quality_summary:
         merged_row = dict(row)
-        gap = gap_rows.get(row["condition"], {})
+        dataset = normalize_dataset_label(row.get("dataset"))
+        condition = canonical_condition(row["condition"])
+        epoch = str(int(row.get("epoch") or 0))
+        gap = gap_rows.get((dataset, condition, epoch), {})
+        if not gap and dataset:
+            gap = gap_rows.get(("", condition, epoch), {})
         merged_row["denoising_gap_mean"] = gap.get("denoising_gap_mean", "")
         merged_row["denoising_gap_std"] = gap.get("denoising_gap_std", "")
         merged.append(merged_row)
@@ -302,7 +368,7 @@ def main() -> None:
         action="append",
         type=Path,
         default=[],
-        help="Optional denoising-gap summary CSV to join by condition.",
+        help="Optional denoising-gap summary CSV to join by dataset, condition, and epoch.",
     )
     parser.add_argument("--output-dir", type=Path, default=Path("runs"))
     parser.add_argument("--prefix", default="sample_quality")
