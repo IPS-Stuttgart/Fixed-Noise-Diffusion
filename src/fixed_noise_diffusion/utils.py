@@ -4,6 +4,7 @@ import csv
 import math
 import os
 import random
+import shutil
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -30,8 +31,32 @@ def resolve_device(requested: str) -> torch.device:
     return torch.device(requested)
 
 
-def make_run_dir(output_dir: str | Path, run_name: str) -> Path:
+def _directory_preview(path: Path, max_entries: int = 8) -> str:
+    entries = sorted(child.name for child in path.iterdir())
+    preview = ", ".join(entries[:max_entries])
+    if len(entries) > max_entries:
+        preview = f"{preview}, ... ({len(entries)} entries total)"
+    return preview
+
+
+def make_run_dir(output_dir: str | Path, run_name: str, *, overwrite: bool = False) -> Path:
     run_dir = Path(output_dir) / run_name
+    if run_dir.exists():
+        if not run_dir.is_dir():
+            raise FileExistsError(
+                f"Run path already exists and is not a directory: {run_dir}"
+            )
+        if any(run_dir.iterdir()):
+            if not overwrite:
+                contents = _directory_preview(run_dir)
+                raise FileExistsError(
+                    "Run directory already exists and is not empty: "
+                    f"{run_dir}. Refusing to append to existing artifacts "
+                    f"({contents}). Choose a unique run_name/output_dir or set "
+                    "overwrite_run=true to delete and replace this run directory."
+                )
+            shutil.rmtree(run_dir)
+
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "checkpoints").mkdir(exist_ok=True)
     (run_dir / "samples").mkdir(exist_ok=True)
