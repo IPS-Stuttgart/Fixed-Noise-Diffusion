@@ -226,7 +226,11 @@ def evaluate_checkpoint(
 def train(config: dict[str, Any]) -> Path:
     seed_everything(int(config["seed"]))
     device = resolve_device(str(config["device"]))
-    run_dir = make_run_dir(config["output_dir"], config["run_name"])
+    run_dir = make_run_dir(
+        config["output_dir"],
+        config["run_name"],
+        overwrite=bool(config.get("overwrite_run", False)),
+    )
     save_config(config, run_dir / "config.yaml")
     logger = MetricLogger(run_dir)
     timer = Timer()
