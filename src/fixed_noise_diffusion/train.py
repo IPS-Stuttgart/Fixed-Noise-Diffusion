@@ -289,6 +289,8 @@ def _training_runtime_config(training_cfg: dict[str, Any]) -> tuple[Any, int, in
 
 
 def train(config: dict[str, Any]) -> Path:
+    if config.get("persistence") or config.get("noise", {}).get("schedule") is not None:
+        raise ValueError("Scheduled study runs require python -m fixed_noise_diffusion.persistence_study")
     seed_everything(int(config["seed"]))
     device = resolve_device(str(config["device"]))
     run_dir = make_run_dir(
