@@ -311,6 +311,8 @@ def make_noise_sampler(
     existing_pool_sampler: FixedPoolNoiseSampler | None = None,
     track_exposure: bool = False,
 ) -> GaussianNoiseSampler | FixedPoolNoiseSampler:
+    if config.get("persistence") or config.get("noise", {}).get("schedule") is not None:
+        raise ValueError("Persistence-study pools must be reconstructed with their schedule and checkpoint state")
     data_cfg = config["data"]
     noise_cfg = config["noise"]
     seed = int(config["seed"]) + int(purpose_seed_offset)
